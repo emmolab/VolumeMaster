@@ -1,0 +1,32 @@
+{
+  "name": "config-editor",
+  "version": "1.0.0",
+  "main": "src/main.js",
+  "renderer": "src/renderer.js",
+  "scripts": {
+    "start": "electron .",
+    "build:css": "npx tailwindcss -i ./src/tailwind.css -o ./dist/tailwind.output.css --watch"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@tailwindcss/cli": "^4.1.11",
+    "@tailwindcss/postcss": "^4.1.11",
+    "electron": "^37.1.0",
+    "extract-file-icon": "^0.3.2",
+    "ps-list": "^8.1.1",
+    "serialport": "^13.0.0",
+    "sharp": "^0.34.2",
+    "tree-kill": "^1.2.2",
+    "yaml": "^2.8.0"
+  },
+  "devDependencies": {
+    "autoprefixer": "^10.4.21",
+    "postcss": "^8.5.6",
+    "postcss-cli": "^11.0.1",
+    "postcss-loader": "^8.1.1",
+    "tailwindcss": "^4.1.11"
+  },
+  "description": ""
+}
