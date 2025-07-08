@@ -238,27 +238,37 @@ function startBackendWithRetry() {
   if (backendProcess) {
      if (tray) tray.setImage(trayIconNormal);
      console.log('Backend running...');
+     sendStatusToRenderer('success', 'Backend started successfully.');
   }
   backendProcess.stdout.on('data', data => {
     console.log(`[Backend stdout] ${data}`);
+    sendStatusToRenderer('info', `[Backend stdout] ${data}`);
   });
 
   backendProcess.stderr.on('data', data => {
     console.error(`[Backend stderr] ${data}`);
+    sendStatusToRenderer('error', `[Backend stderr] ${data}`);
   });
 
   backendProcess.on('error', err => {
     console.error('[Backend error]', err);
+    sendStatusToRenderer('error', `Backend error: ${err.message}`);
     scheduleRetry();
   });
 
   backendProcess.on('close', code => {
     console.log(`[Backend exited with code ${code}]`);
+     sendStatusToRenderer('warning', `Backend exited with code ${code}`);
     backendProcess = null;
     scheduleRetry();
   });
 }
-
+function sendStatusToRenderer(type, message) {
+  const window = BrowserWindow.getAllWindows()[0];
+  if (window) {
+    window.webContents.send('backend-status', { type, message });
+  }
+}
 function scheduleRetry() {
   if (tray) tray.setImage(trayIconCrashed);
 

@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld('api', {
   getComPort: () => ipcRenderer.invoke('get-com-port'),
   setComPort: (port) => ipcRenderer.invoke('set-com-port', port),
   saveAndRun: () => ipcRenderer.invoke('save-and-run'),
+    onBackendStatus: (callback) => ipcRenderer.on('backend-status', (_, data) => callback(data)),
 });
 
 

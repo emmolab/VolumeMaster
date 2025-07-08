@@ -307,8 +307,70 @@ function setupTabs() {
 }
 
 document.getElementById('saveAndRunBtn')?.addEventListener('click', async () => {
-  await window.api.saveAndRun();
+  await window.api.saveAndRun();  
 });
+
+
+
+window.api.onBackendStatus(({ type, message }) => {
+  showAlert(type, message);
+});
+
+function showAlert(type, message) {
+  const alertContainer = document.getElementById('alertContainer');
+  if (!alertContainer) return;
+
+  const colorMap = {
+    success: 'green',
+    info: 'blue',
+    warning: 'yellow',
+    error: 'red'
+  };
+
+  const color = colorMap[type] || 'blue';
+  const id = `alert-${Date.now()}`;
+
+  const alert = document.createElement('div');
+  alert.id = id;
+  alert.className = `
+    relative w-full max-w-sm px-4 py-2 pr-10
+    bg-${color}-100 border border-${color}-200 text-${color}-800
+    text-sm font-medium rounded shadow-sm
+    opacity-0 translate-y-2
+    transition-all duration-300 ease-out
+  `.replace(/\s+/g, ' ').trim();
+
+  alert.innerHTML = `
+    <span class="block text-center truncate">${message}</span>
+    <button onclick="document.getElementById('${id}').remove()"
+            class="absolute top-2 right-2 text-${color}-500 hover:text-${color}-700 transition text-base leading-none">
+      ×
+    </button>
+  `;
+
+  alertContainer.appendChild(alert);
+
+  // Trigger the animation on the next tick
+  requestAnimationFrame(() => {
+    alert.classList.remove('opacity-0', 'translate-y-2');
+    alert.classList.add('opacity-100', 'translate-y-0');
+  });
+
+  // Auto-dismiss with fade-out
+  setTimeout(() => {
+    alert.classList.remove('opacity-100', 'translate-y-0');
+    alert.classList.add('opacity-0', 'translate-y-2');
+
+    // Remove from DOM after transition
+    setTimeout(() => {
+      document.getElementById(id)?.remove();
+    }, 300);
+  }, 4000);
+}
+
+
+
+
 
 setupTabs();
 renderComPortSettings();

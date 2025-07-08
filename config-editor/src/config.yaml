@@ -13,8 +13,11 @@ Mappings:
     ProcessNames: []
     VoiceMeeter: null
   "3":
-    ProcessNames: []
+    ProcessNames:
+      - Spotify.exe
     VoiceMeeter: null
   "4":
-    ProcessNames: []
+    ProcessNames:
+      - Plex.exe
+      - firefox.exe
     VoiceMeeter: null
