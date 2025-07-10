@@ -37,7 +37,7 @@ async function renderAllKnobsAndApps() {
 
 function createKnobSection(knobId) {
   const section = document.createElement('section');
-  section.className = "bg-slate-800 rounded-lg shadow p-4 m-4 flex flex-col w-64 border border-slate-700";
+  section.className = "bg-slate-800 rounded-lg shadow p-4 m-4 flex flex-col w-64 border border-slate-700 grow overflow-y-auto";
   
   section.addEventListener('dragover', e => e.preventDefault());
   section.addEventListener('drop', e => handleDrop(e, knobId));
@@ -70,17 +70,22 @@ function createEmptyMessage() {
   return msg;
 }
 
+function sanitizeAppName(name) {
+  return name.replace(/([A-Z]+)/g, ' $1').replace('.exe', '').trim();
+}
+
 function createAppCard(app, knobId) {
   const card = document.createElement('div');
-  card.className = "flex items-center gap-4 mb-3 p-3 rounded border border-gray-300 hover:bg-red-100 cursor-pointer transition";
+  card.className = "flex items-center gap-4 mb-3 p-3 rounded border border-gray-300 hover:bg-red-100 cursor-pointer transition overflow-hidden";
 
   const icon = document.createElement('img');
   icon.alt = app;
-  icon.className = "w-10 h-10 rounded";
+  icon.className = "w-10 h-10 rounded sm:hidden md:block";
 
   const label = document.createElement('div');
-  label.textContent = app;
-  label.className = "text-lg font-medium flex-grow";
+  label.id = app;
+  label.textContent = sanitizeAppName(app);
+  label.className = "text-lg font-medium shrink capitalize text-wrap";
 
   card.append(icon, label);
 
@@ -181,7 +186,7 @@ async function removeAppFromKnob(knobId, appName) {
 
     const card = [...knobSection.children].find(child => {
       const label = child.querySelector('div.text-lg');
-      return label && label.textContent === appName;
+      return label && label.id === appName;
     });
     if (card) card.remove();
 
@@ -209,8 +214,9 @@ function renderProcessSearch() {
       .filter(name => name.toLowerCase().includes(filter))
       .forEach(name => {
         const item = document.createElement('div');
-        item.textContent = name;
-        item.className = 'px-2 py-1 bg-slate-700 text-indigo-200 rounded cursor-move hover:bg-indigo-600 transition whitespace-nowrap';
+        item.textContent = sanitizeAppName(name);
+        item.id = name;
+        item.className = 'px-2 py-1 bg-slate-700 text-indigo-200 rounded cursor-move hover:bg-indigo-600 transition whitespace-nowrap capitalize max-h-8';
 
         // ✅ Use setAttribute for "draggable" instead of property
         item.setAttribute('draggable', 'true');

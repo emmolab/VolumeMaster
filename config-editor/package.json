@@ -25,8 +25,10 @@
       "!**/node_modules/@esbuild"
     ],
     "extraResources": [
-      {    "from": "VolumeMaster-Headless.exe",
-    "to": "VolumeMaster-Headless.exe"}
+      {
+        "from": "VolumeMaster-Headless.exe",
+        "to": "VolumeMaster-Headless.exe"
+      }
     ],
     "directories": {
       "output": "release"
@@ -56,6 +58,7 @@
     "autoprefixer": "^10.4.21",
     "electron": "^37.2.0",
     "electron-builder": "^26.0.12",
+    "electron-reloader": "^1.2.3",
     "postcss": "^8.5.6",
     "postcss-cli": "^11.0.1",
     "postcss-loader": "^8.1.1",

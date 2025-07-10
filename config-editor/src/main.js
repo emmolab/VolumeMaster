@@ -379,6 +379,11 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
 
+// --- Hot Reload ---
+try {
+	require('electron-reloader')(module);
+} catch {}
+
 
 
 function killBackendByName(name = 'VolumeMaster-Headless.exe') {
