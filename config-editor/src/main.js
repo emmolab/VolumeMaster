@@ -17,8 +17,14 @@ let mainWindow;
 let tray;
 
 // --- Constants & Globals ---
-const CONFIG_PATH = path.join(__dirname, 'config.yaml');
-const CACHE_DIR = path.join(__dirname, 'iconCache');
+const CONFIG_PATH = path.join(app.getPath('userData'), 'config.yaml');
+//fs.mkdirSync(CONFIG_PATH, { recursive: true });
+
+const CACHE_DIR = path.join(app.getPath('userData'), 'iconCache');
+fs.mkdirSync(CACHE_DIR, { recursive: true });
+const DEFAULT_CONFIG_PATH = path.join(__dirname, 'assets','config.yaml');
+
+const exePath = path.join(process.resourcesPath,  'VolumeMaster-Headless.exe');
 const exePathCache = new Map();
 let configCache = null;
 const { SerialPort } = require('serialport');
@@ -53,7 +59,8 @@ function loadConfig() {
       const file = fs.readFileSync(CONFIG_PATH, 'utf8');
       configCache = yaml.parse(file);
     } catch {
-      configCache = { Mappings: {}, exePaths: {}, comport: null };
+      const file = fs.readFileSync(DEFAULT_CONFIG_PATH, 'utf8')
+      configCache = yaml.parse(file);
     }
   }
   return configCache;
@@ -81,11 +88,7 @@ function findExePath(exeName) {
   if (exePathCache.has(exeName)) return exePathCache.get(exeName);
 
   const config = loadConfig();
-  const manualPath = config.exePaths?.[exeName.toLowerCase()];
-  if (manualPath) {
-    exePathCache.set(exeName, manualPath);
-    return manualPath;
-  }
+ 
 
   try {
     const output = execSync(`where ${exeName}`, { encoding: 'utf8' })
@@ -230,10 +233,11 @@ function startBackendWithRetry() {
   }
 
   console.log('Attempting to start backend...');
-  backendProcess = spawn('VolumeMaster-Headless.exe', [], {
+  backendProcess = spawn(exePath, [], {
   detached: false, 
   stdio: 'pipe',   
-  shell: false     
+  shell: false,  
+  cwd: app.getPath('userData')    
 });
   if (backendProcess) {
      if (tray) tray.setImage(trayIconNormal);

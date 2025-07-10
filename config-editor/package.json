@@ -1,16 +1,13 @@
 {
   "name": "volume-master",
   "version": "1.0.0",
-  "main": "src/main.js",
-  "renderer": "src/renderer.js",
   "description": "A simple Electron app to manage VoiceMaster configurations",
+  "main": "src/main.js",
   "author": "William Spalding",
   "license": "ISC",
   "scripts": {
-    "start": "electron-forge start",
-    "build:css": "npx tailwindcss -i ./src/tailwind.css -o ./dist/tailwind.output.css --watch",
-    "package": "electron-forge package",
-    "make": "electron-forge make",
+    "start": "electron .",
+    "build": "electron-builder",
     "dist": "electron-builder"
   },
   "build": {
@@ -20,13 +17,16 @@
       "dist/**/*",
       "src/**/*",
       "assets/**/*",
-      "main.js",
-      "preload.js",
       "renderer.html",
-      "config.yaml"
+      "config.yaml",
+      "VolumeMaster-Headless.exe",
+      "!**/node_modules/@tailwindcss/oxide-wasm32-wasi",
+      "!**/node_modules/@emnapi",
+      "!**/node_modules/@esbuild"
     ],
     "extraResources": [
-      "assets/**/*"
+      {    "from": "VolumeMaster-Headless.exe",
+    "to": "VolumeMaster-Headless.exe"}
     ],
     "directories": {
       "output": "release"
@@ -43,7 +43,6 @@
   "dependencies": {
     "@tailwindcss/cli": "^4.1.11",
     "@tailwindcss/postcss": "^4.1.11",
-    "electron-squirrel-startup": "^1.0.1",
     "extract-file-icon": "^0.3.2",
     "ps-list": "^8.1.1",
     "serialport": "^13.0.0",
@@ -53,16 +52,10 @@
     "yaml": "^2.8.0"
   },
   "devDependencies": {
-    "@electron-forge/cli": "^7.8.1",
-    "@electron-forge/maker-deb": "^7.8.1",
-    "@electron-forge/maker-rpm": "^7.8.1",
-    "@electron-forge/maker-squirrel": "^7.8.1",
-    "@electron-forge/maker-zip": "^7.8.1",
-    "@electron-forge/plugin-auto-unpack-natives": "^7.8.1",
-    "@electron-forge/plugin-fuses": "^7.8.1",
     "@electron/fuses": "^1.8.0",
     "autoprefixer": "^10.4.21",
     "electron": "^37.2.0",
+    "electron-builder": "^26.0.12",
     "postcss": "^8.5.6",
     "postcss-cli": "^11.0.1",
     "postcss-loader": "^8.1.1",
