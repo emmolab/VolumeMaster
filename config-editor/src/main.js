@@ -295,7 +295,26 @@ ipcMain.handle('save-and-run', async () => {
   }
 });
 
+ipcMain.handle('enable-vm', async () => {
+  const config = loadConfig();
+  config.VM = true;
+  
+  saveConfig(config);  
+});
 
+ipcMain.handle('disable-vm', async () => {
+  const config = loadConfig();
+  config.VM = false;
+  
+  saveConfig(config);  
+});
+
+ipcMain.handle('set-vm-version', async (_, version) => {
+  const config = loadConfig();
+  config.vmversion = version;
+  
+  saveConfig(config);
+});
 
 // --- App Lifecycle ---
 

@@ -4,7 +4,8 @@ let iconCache = new Map();
 
 // --- Entry Point ---
 window.api.loadConfig().then(data => {
-  config = data || { Mappings: {}, exePaths: {} };
+  config = data || { Mappings: {}};
+
   renderAllKnobsAndApps();
 });
 loadProcessList();
@@ -14,6 +15,8 @@ async function loadProcessList() {
   runningProcesses = await window.api.listProcesses();
   renderProcessSearch();
 }
+
+
 
 // --- Rendering ---
 async function renderAllKnobsAndApps() {
@@ -281,6 +284,10 @@ async function renderComPortSettings() {
   };
 }
 
+document.getElementById('comPortSelect')?.addEventListener('click', async () => { 
+  renderComPortSettings();
+});
+
 // --- Tabs ---
 function setupTabs() {
   const tabs = {
@@ -315,6 +322,33 @@ function setupTabs() {
 document.getElementById('saveAndRunBtn')?.addEventListener('click', async () => {
   await window.api.saveAndRun();  
 });
+
+document.getElementById('vmEnableButton')?.addEventListener('click', async () => {
+  const button = document.getElementById('vmEnableButton');
+  
+  // Determine the current state from text or dataset
+  const isOn = button.textContent.trim().toLowerCase() === "enabled";
+
+  const newState = !isOn;
+  button.dataset.enabled = newState;
+
+  button.textContent = newState ? "Enabled" : "Disabled";
+
+  if (newState) {
+    button.classList.remove('bg-red-500', 'hover:bg-red-600');
+    button.classList.add('bg-green-500', 'hover:bg-green-600');
+  } else {
+    button.classList.remove('bg-green-500', 'hover:bg-green-600');
+    button.classList.add('bg-red-500', 'hover:bg-red-600');
+    await window.api.disableVM();
+  }
+});
+
+document.getElementById('vmVersionSelect')?.addEventListener('change', async (e) => {
+  const selectedVersion = e.target.value;
+  await window.api.setVMVersion(selectedVersion);
+});
+
 
 
 
@@ -376,7 +410,7 @@ function showAlert(type, message) {
 
 
 
-
-
 setupTabs();
 renderComPortSettings();
+
+
