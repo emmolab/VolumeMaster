@@ -16,6 +16,10 @@ async function loadProcessList() {
   renderProcessSearch();
 }
 
+document.getElementById('processSearch')?.addEventListener('focus', async () => {
+  await loadProcessList();
+  document.getElementById('processSearch').value = '';
+});
 
 
 // --- Rendering ---
@@ -99,7 +103,7 @@ function createAppCard(app, knobId) {
   };
 
   // Use cached icon if available
-  if (iconCache.has(app)) {
+  if (iconCache.has(app)) {    
     icon.src = iconCache.get(app);
   } else {
     // Fetch icon and cache it, update img src once ready
@@ -201,16 +205,20 @@ async function removeAppFromKnob(knobId, appName) {
 }
 
 // --- Process Search ---
+
+
 function renderProcessSearch() {
-  const searchInput = document.getElementById('processSearch');
+  
+  const searchInput = document.getElementById('processSearch');  
   const list = document.getElementById('processList');
   if (!searchInput || !list) return;
 
   searchInput.oninput = () => updateList(searchInput.value.toLowerCase());
+  
   updateList('');
 
   function updateList(filter) {
-    // ✅ Replace innerHTML with safer removal
+    // Replace innerHTML with safer removal
     while (list.firstChild) list.removeChild(list.firstChild);
 
     runningProcesses
@@ -221,10 +229,10 @@ function renderProcessSearch() {
         item.id = name;
         item.className = 'px-2 py-1 bg-slate-700 text-indigo-200 rounded cursor-move hover:bg-indigo-600 transition whitespace-nowrap capitalize max-h-8';
 
-        // ✅ Use setAttribute for "draggable" instead of property
+        // Use setAttribute for "draggable" instead of property
         item.setAttribute('draggable', 'true');
 
-        // ✅ Use addEventListener instead of direct assignment
+        // Use addEventListener instead of direct assignment
         item.addEventListener('dragstart', (e) => {
           try {
             e.dataTransfer.setData('text/plain', name);
@@ -237,7 +245,6 @@ function renderProcessSearch() {
       });
   }
 }
-
 
 // --- COM Port Settings ---
 async function renderComPortSettings() {
