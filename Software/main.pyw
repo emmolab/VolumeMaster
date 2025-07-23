@@ -36,7 +36,7 @@ buttons = {}
 def setup_voicemeeter(config):
     global vmr, veme
     import voicemeeter
-    vmr = voicemeeter.remote(config['VM-Version'])
+    vmr = voicemeeter.remote(config['vmversion'])
     vmr.login()
     veme = 1
 
@@ -76,22 +76,28 @@ atexit.register(lambda: vmr.logout() if veme else None)
 # Map setup
 mappings = {}
 for key, val in config.get('Mappings', {}).items():
-    index = int(key.lower().strip('id'))
+    try:
+        index = int(key)
+    except ValueError:
+        print(f"Invalid mapping key: {key}")
+        continue
+
     entry = {}
 
-    # Handle Applications
-    apps = val.get('Applications')
-    if apps:
-        entry['apps'] = [a.strip() for a in apps.split(';') if a.strip()]
+    # Handle ProcessNames (list)
+    apps = val.get('ProcessNames')
+    if isinstance(apps, list):
+        entry['apps'] = [a.strip() for a in apps if isinstance(a, str) and a.strip()]
 
-    # Handle VM (support multiple entries)
-    vm = val.get('VM')
+    # Handle VoiceMeeter (can be None or list)
+    vm = val.get('VoiceMeeter')
     if vm:
-        entry['vm'] = [v.strip() for v in vm.split(';') if v.strip()]
+        if isinstance(vm, list):
+            entry['vm'] = [v.strip() for v in vm if isinstance(v, str) and v.strip()]
+        elif isinstance(vm, str):
+            entry['vm'] = [vm.strip()]
 
     mappings[index] = entry
-mappings[index] = entry
-
 # Button mapping
 buttons = {
     key: val.split(';') for key, val in config.get('Buttons', {}).items() if val

@@ -1,0 +1,20 @@
+comport: COM3
+baudrate: 9600
+bytesize: 8
+parity: N
+stopbits: 1
+VM: N
+vmversion: banana
+Mappings:
+  "1":
+    ProcessNames: []
+    VoiceMeeter: null
+  "2":
+    ProcessNames: []
+    VoiceMeeter: null
+  "3":
+    ProcessNames: []
+    VoiceMeeter: null
+  "4":
+    ProcessNames: []
+    VoiceMeeter: null
