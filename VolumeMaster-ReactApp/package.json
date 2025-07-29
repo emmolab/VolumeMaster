@@ -1,0 +1,68 @@
+{
+  "name": "volume-master",
+  "version": "1.0.0",
+  "description": "A simple Electron app to manage VoiceMaster configurations",
+  "main": "src/main.js",
+  "author": "William Spalding",
+  "license": "ISC",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder",
+    "dist": "electron-builder"
+  },
+  "build": {
+    "appId": "com.williamspalding.volumemaster",
+    "productName": "VolumeMaster",
+    "files": [
+      "dist/**/*",
+      "src/**/*",
+      "assets/**/*",
+      "renderer.html",
+      "config.yaml",
+      "VolumeMaster-Headless.exe",
+      "!**/node_modules/@tailwindcss/oxide-wasm32-wasi",
+      "!**/node_modules/@emnapi",
+      "!**/node_modules/@esbuild"
+    ],
+    "extraResources": [
+      {
+        "from": "VolumeMaster-Headless.exe",
+        "to": "VolumeMaster-Headless.exe"
+      }
+    ],
+    "directories": {
+      "output": "release"
+    },
+    "win": {
+      "target": "nsis",
+      "icon": "src/assets/icons/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  },
+  "dependencies": {
+    "@tailwindcss/cli": "^4.1.11",
+    "@tailwindcss/postcss": "^4.1.11",
+    "extract-file-icon": "^0.3.2",
+    "icojs": "^0.19.5",
+    "ps-list": "^8.1.1",
+    "serialport": "^13.0.0",
+    "sharp": "^0.34.2",
+    "tree-kill": "^1.2.2",
+    "x64": "^1.0.0",
+    "yaml": "^2.8.0"
+  },
+  "devDependencies": {
+    "@electron/fuses": "^1.8.0",
+    "autoprefixer": "^10.4.21",
+    "electron": "^37.2.0",
+    "electron-builder": "^26.0.12",
+    "electron-reloader": "^1.2.3",
+    "postcss": "^8.5.6",
+    "postcss-cli": "^11.0.1",
+    "postcss-loader": "^8.1.1",
+    "tailwindcss": "^4.1.11"
+  }
+}

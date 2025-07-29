@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en" class="bg-slate-900 text-gray-300">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link href="output.css" rel="stylesheet" />
+
+    <title>VolumeMaster</title>
+
+    <!-- Tailwind CSS -->
+
+    <style>
+      body {
+        /* Override Tailwind classes if needed */
+        font-family: Inter, system-ui, sans-serif;
+        min-height: 100vh;
+        margin: 0;
+        padding: 1rem;
+      }
+      #knobsAppsContainer {
+        scrollbar-width: thin;
+        scrollbar-color: #818cf8 transparent;
+        justify-content: center;
+        min-height: 250px;
+      }
+      #knobsAppsContainer::-webkit-scrollbar {
+        height: 6px;
+      }
+      #knobsAppsContainer::-webkit-scrollbar-thumb {
+        background-color: #6366f1; /* indigo-500 */
+        border-radius: 3px;
+      }
+      #knobsAppsContainer::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      #processList {
+        scrollbar-width: thin;
+        scrollbar-color: #6366f1 transparent; /* Indigo-500 thumb, transparent track */
+      }
+      #processList::-webkit-scrollbar {
+        height: 6px;
+        width: 6px;
+      }
+      #processList::-webkit-scrollbar-thumb {
+        background-color: #6366f1; /* Indigo-500 */
+        border-radius: 3px;
+      }
+      #processList::-webkit-scrollbar-track {
+        background: transparent;
+      }
+    </style>
+  </head>
+  <body class="max-h-screen flex flex-col">
+    <!-- Tabs -->
+    <div class="flex justify-center mb-6 gap-6 border-b border-slate-700">
+      <button
+        id="tabMappings"
+        class="tab-button pb-2 text-indigo-400 border-b-2 border-indigo-400 font-semibold text-sm"
+      >
+        Knob Mappings
+      </button>
+      <button
+        id="tabSettings"
+        class="tab-button pb-2 text-slate-500 hover:text-indigo-400 text-sm"
+      >
+        Settings
+      </button>
+    </div>
+
+    <!-- Mappings Section -->
+    <div
+      id="tabContentMappings"
+      class="grow flex flex-col max-h-full flex-auto basis-auto min-h-0"
+    >
+      <input
+        id="processSearch"
+        type="text"
+        placeholder="Search running apps..."
+        class="w-full p-1.5 text-sm border border-slate-700 rounded bg-slate-800 text-gray-300 placeholder-slate-500 focus:outline-indigo-400 focus:ring-1 focus:ring-indigo-400"
+      />
+      <div
+        id="processList"
+        class="flex flex-wrap gap-1 mt-2 overflow-y-auto overflow-x-hidden shrink min-h-0 mb-4 flex-initial overflow-y-auto"
+      ></div>
+      <div
+        id="knobsAppsContainer"
+        class="flex flex-wrap gap-4 overflow-y-auto pb-2 mb-4 justify-center items-start min-h-[250px]"
+      >
+        <!-- Knob sections rendered here -->
+      </div>
+
+      <button
+        id="saveAndRunBtn"
+        class="w-full bg-indigo-600 text-white py-2 rounded-md hover:bg-indigo-700 transition text-sm font-semibold shadow-md"
+      >
+        Save and Run
+      </button>
+
+      <div
+        id="alertContainer"
+        class="flex flex-col items-center space-y-4 px-4 py-2"
+      ></div>
+    </div>
+
+    <!-- Settings Section -->
+    <div
+      id="tabContentSettings"
+      class="hidden max-w-3xl w-md px-4 mx-auto grow space-y-4"
+    >
+      <div
+        class="bg-slate-800 rounded-lg shadow p-4 border border-slate-700 w-md"
+      >
+        <h2 class="text-lg font-semibold text-indigo-400 mb-4">
+          Device Settings
+        </h2>
+        <div class="mb-4">
+          <label
+            for="comPortSelect"
+            class="block mb-1 font-medium text-gray-400 text-sm"
+          >
+            Select COM Port
+          </label>
+          <select
+            id="comPortSelect"
+            class="w-full p-2 text-sm border border-slate-700 rounded bg-slate-900 text-gray-300 focus:outline-indigo-400 focus:ring-1 focus:ring-indigo-400"
+          >
+            <option disabled selected>Loading...</option>
+          </select>
+        </div>
+      </div>
+
+      <div
+        class="bg-slate-800 rounded-lg shadow p-4 border border-slate-700 w-md"
+      >
+        <h2 class="text-lg font-semibold text-indigo-400 mb-4">VoiceMeeter</h2>
+        <div class="mb-4">
+          <button
+            id="vmEnableButton"
+            class="w-full p-2 text-sm border border-slate-700 rounded bg-slate-900 text-gray-300 hover:bg-slate-800 focus:outline-indigo-400 focus:ring-1 focus:ring-indigo-400 transition"
+            data-enabled="false"
+          >
+            Disabled
+          </button>
+        </div>
+
+        <div class="mb-4">
+          <label
+            for="vmVersionSelect"
+            class="block mb-1 font-medium text-gray-400 text-sm"
+          >
+            Select VoiceMeeter Version
+          </label>
+          <select
+            id="vmVersionSelect"
+            class="w-full p-2 text-sm border border-slate-700 rounded bg-slate-900 text-gray-300 focus:outline-indigo-400 focus:ring-1 focus:ring-indigo-400"
+          >
+            <option value="standard">VoiceMeeter Standard</option>
+            <option value="banana">VoiceMeeter Banana</option>
+            <option value="potato">VoiceMeeter Potato</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <script src="renderer.js"></script>
+  </body>
+</html>
