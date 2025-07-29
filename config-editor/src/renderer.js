@@ -1,4 +1,4 @@
-// Fixed version of your renderer.js with drag and drop issues resolved
+// Updated renderer.js with Master Volume button feature
 
 let config = { Mappings: {}, exePaths: {} };
 let runningProcesses = [];
@@ -36,7 +36,7 @@ async function renderAllKnobsAndApps() {
 
   container.className = 'flex space-x-4 overflow-x-auto pb-2 mb-4';
   
-  // FIXED: Remove existing listeners before adding new ones
+  // Remove existing listeners before adding new ones
   container.removeEventListener('dragover', containerDragOver);
   container.removeEventListener('drop', containerDrop);
   
@@ -50,7 +50,7 @@ async function renderAllKnobsAndApps() {
   }
 }
 
-// FIXED: Extract handlers to prevent memory leaks
+// Extract handlers to prevent memory leaks
 function containerDragOver(e) {
   e.preventDefault();
   e.stopPropagation();
@@ -72,7 +72,7 @@ function createKnobSection(knobId) {
   section.id = `knob-section-${knobId}`;
   section.className = "bg-slate-800 rounded-lg shadow p-4 m-4 flex flex-col w-64 border border-slate-700 grow overflow-y-auto";
   
-  // FIXED: Use proper event handler functions to prevent duplicates
+  // Use proper event handler functions to prevent duplicates
   const sectionHandlers = {
     dragover: (e) => {
       e.preventDefault();
@@ -108,17 +108,133 @@ function createKnobSection(knobId) {
   });
 
   section.appendChild(createKnobHeader(knobId));
+  
+  // NEW: Add Master Volume button to each knob section
+  section.appendChild(createMasterVolumeButton(knobId));
 
   const apps = config.Mappings[knobId]?.ProcessNames || [];
+  
   if (apps.length === 0) {
     section.appendChild(createEmptyMessage());
   } else {
     apps.forEach(app => {
-      section.appendChild(createAppCard(app, knobId));
+      if (app === 'master') {
+        // Show master volume card for 'master' entry
+        section.appendChild(createMasterVolumeCard(knobId));
+      } else {
+        // Show regular app card
+        section.appendChild(createAppCard(app, knobId));
+      }
     });
   }
 
   return section;
+}
+
+// NEW: Create Master Volume button
+function createMasterVolumeButton(knobId) {
+  const button = document.createElement('button');
+  const apps = config.Mappings[knobId]?.ProcessNames || [];
+  const hasMasterVolume = apps.includes('master');
+  
+  button.textContent = 'Add Master Volume';
+  button.className = 'w-full mb-3 py-2 px-3 text-sm font-medium rounded transition bg-indigo-600 hover:bg-indigo-700 text-white';
+  
+  // Hide button if master volume already exists
+  if (hasMasterVolume) {
+    button.style.display = 'none';
+  }
+  
+  button.onclick = async () => {
+    await addMasterVolume(knobId);
+  };
+  
+  return button;
+}
+
+// NEW: Create Master Volume indicator card
+function createMasterVolumeCard(knobId) {
+  const card = document.createElement('div');
+  card.className = "flex items-center gap-4 mb-3 p-3 rounded border border-indigo-400 bg-indigo-900 bg-opacity-30 cursor-pointer transition overflow-hidden";
+  card.setAttribute('data-appname', 'master'); // Use data-appname like regular apps
+  
+  const icon = document.createElement('div');
+  icon.className = "w-10 h-10 rounded bg-indigo-500 flex items-center justify-center text-white font-bold text-lg";
+  icon.textContent = "🔊";
+  
+  const label = document.createElement('div');
+  label.textContent = "Master Volume";
+  label.className = "text-lg font-medium text-indigo-300";
+
+  card.append(icon, label);
+
+  // Remove master volume on click (same as regular apps)
+  card.onclick = async () => {
+    console.log(`[createMasterVolumeCard] Removing master volume from knob ${knobId}`);
+    await removeAppFromKnob(knobId, 'master');
+    card.remove();
+  };
+
+  return card;
+}
+
+// NEW: Add Master Volume function
+async function addMasterVolume(knobId) {
+  try {
+    // Ensure mapping structure exists
+    if (!config.Mappings[knobId]) {
+      config.Mappings[knobId] = { ProcessNames: [] };
+    }
+
+    const mapping = config.Mappings[knobId];
+    
+    if (!Array.isArray(mapping.ProcessNames)) {
+      mapping.ProcessNames = [];
+    }
+
+    // Check if master volume already exists
+    if (mapping.ProcessNames.includes('master')) {
+      console.warn(`[addMasterVolume] Master volume already exists for knob ${knobId}`);
+      return;
+    }
+    
+    // Add master to ProcessNames
+    mapping.ProcessNames.push('master');
+    
+    console.log(`[addMasterVolume] Added master volume to knob ${knobId}`);
+    
+    // Update UI
+    const knobSection = document.getElementById(`knob-section-${knobId}`);
+    if (!knobSection) {
+      console.warn(`[addMasterVolume] No section found for knob ${knobId}`);
+      return;
+    }
+
+    // Hide the Add Master Volume button
+    const button = knobSection.querySelector('button');
+    if (button) {
+      button.style.display = 'none';
+    }
+
+    // Remove empty message if it exists
+    const emptyMsg = knobSection.querySelector('p');
+    if (emptyMsg?.textContent === 'No apps mapped.') {
+      emptyMsg.remove();
+    }
+
+    // Add master volume card
+    const masterVolumeCard = createMasterVolumeCard(knobId);
+    const button_element = knobSection.querySelector('button');
+    button_element.parentNode.insertBefore(masterVolumeCard, button_element.nextSibling);
+
+    // Save config
+    await window.api.saveConfig(config);
+    
+    console.log(`[addMasterVolume] Master volume added for knob ${knobId}`);
+    
+  } catch (err) {
+    console.error('[addMasterVolume] Error:', err);
+  }
 }
 
 function createKnobHeader(knobId) {
@@ -226,6 +342,12 @@ async function handleDrop(event, knobId) {
       return;
     }
 
+    // Don't allow dropping 'master' - use the button instead
+    if (droppedApp === 'master') {
+      console.warn(`[handleDrop] Cannot drop 'master' - use Add Master Volume button`);
+      return;
+    }
+
     // Update config
     mapping.ProcessNames.push(droppedApp);
     console.log(`[handleDrop] Updated config:`, mapping.ProcessNames);
@@ -306,6 +428,15 @@ async function removeAppFromKnob(knobId, appName) {
       console.log(`[removeAppFromKnob] Removed card for "${appName}"`);
     }
 
+    // Show Add Master Volume button if master was removed
+    if (appName === 'master') {
+      const button = knobSection.querySelector('button');
+      if (button) {
+        button.style.display = 'block';
+      }
+    }
+
+    // Show empty message if no apps left
     if (mapping.ProcessNames.length === 0) {
       knobSection.appendChild(createEmptyMessage());
       console.log(`[removeAppFromKnob] No apps left, added empty message`);
@@ -316,7 +447,7 @@ async function removeAppFromKnob(knobId, appName) {
 }
 
 // --- Process Search ---
-// FIXED: Global reference to current search input to prevent duplicate listeners
+// Global reference to current search input to prevent duplicate listeners
 let currentSearchInput = null;
 
 function renderProcessSearch() {
@@ -324,7 +455,7 @@ function renderProcessSearch() {
   const list = document.getElementById('processList');
   if (!searchInput || !list) return;
 
-  // FIXED: Only replace if it's different to prevent infinite loops
+  // Only replace if it's different to prevent infinite loops
   if (currentSearchInput !== searchInput) {
     // Remove old listener if exists
     if (currentSearchInput) {
@@ -351,7 +482,7 @@ function renderProcessSearch() {
 
         item.setAttribute('draggable', 'true');
 
-        // FIXED: Use proper event handler function
+        // Use proper event handler function
         const dragStartHandler = (e) => {
           console.log("Dragging:", name);
           
@@ -360,12 +491,12 @@ function renderProcessSearch() {
             return;
           }
           
-          // FIXED: Clear any existing data first
+          // Clear any existing data first
           e.dataTransfer.clearData();
           e.dataTransfer.setData('text/plain', name);
           e.dataTransfer.effectAllowed = 'copy';
           
-          // FIXED: Add visual feedback
+          // Add visual feedback
           item.style.opacity = '0.5';
           
           // Reset opacity after drag
@@ -547,7 +678,7 @@ function showAlert(type, message) {
   }, 4000);
 }
 
-// FIXED: Simplified global drag/drop handlers - only prevent file drops
+// Simplified global drag/drop handlers - only prevent file drops
 document.addEventListener('dragover', (e) => {
   // Only prevent if it's a file being dragged from outside
   if (e.dataTransfer.types.includes('Files')) {

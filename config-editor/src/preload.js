@@ -12,9 +12,10 @@ contextBridge.exposeInMainWorld('api', {
   saveAndRun: () => ipcRenderer.invoke('save-and-run'),
   onBackendStatus: (callback) => ipcRenderer.on('backend-status', (_, data) => callback(data)),
   enableVM: () => ipcRenderer.invoke('enable-vm'),
-  disableVN: () => ipcRenderer.invoke('disable-vm'),
+  disableVM: () => ipcRenderer.invoke('disable-vm'),
   setVMVersion: (version) => ipcRenderer.invoke('set-vm-version', version),
   getVMVersion: () => ipcRenderer.invoke('get-vm-version'),
+  
 });
 
 

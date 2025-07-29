@@ -3,8 +3,8 @@ baudrate: 9600
 bytesize: 8
 parity: N
 stopbits: 1
-VM: N
-VM-Version: banana
+vm: false
+vmversion: banana
 Mappings:
   "1":
     ProcessNames: []
