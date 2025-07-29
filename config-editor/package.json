@@ -35,7 +35,7 @@
     },
     "win": {
       "target": "nsis",
-      "icon": "assets/icons/icon.ico"
+      "icon": "src/assets/icons/icon.ico"
     },
     "nsis": {
       "oneClick": false,
@@ -46,6 +46,7 @@
     "@tailwindcss/cli": "^4.1.11",
     "@tailwindcss/postcss": "^4.1.11",
     "extract-file-icon": "^0.3.2",
+    "icojs": "^0.19.5",
     "ps-list": "^8.1.1",
     "serialport": "^13.0.0",
     "sharp": "^0.34.2",

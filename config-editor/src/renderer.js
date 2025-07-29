@@ -1,3 +1,5 @@
+// Fixed version of your renderer.js with drag and drop issues resolved
+
 let config = { Mappings: {}, exePaths: {} };
 let runningProcesses = [];
 let iconCache = new Map();
@@ -5,7 +7,6 @@ let iconCache = new Map();
 // --- Entry Point ---
 window.api.loadConfig().then(data => {
   config = data || { Mappings: {}};
-
   renderAllKnobsAndApps();
 });
 loadProcessList();
@@ -21,7 +22,6 @@ document.getElementById('processSearch')?.addEventListener('focus', async () => 
   document.getElementById('processSearch').value = '';
 });
 
-
 // --- Rendering ---
 async function renderAllKnobsAndApps() {
   const container = document.getElementById('knobsAppsContainer');
@@ -35,6 +35,14 @@ async function renderAllKnobsAndApps() {
   }
 
   container.className = 'flex space-x-4 overflow-x-auto pb-2 mb-4';
+  
+  // FIXED: Remove existing listeners before adding new ones
+  container.removeEventListener('dragover', containerDragOver);
+  container.removeEventListener('drop', containerDrop);
+  
+  // Add clean event listeners
+  container.addEventListener('dragover', containerDragOver);
+  container.addEventListener('drop', containerDrop);
 
   for (const knobId of knobIds) {
     const section = createKnobSection(knobId);
@@ -42,12 +50,62 @@ async function renderAllKnobsAndApps() {
   }
 }
 
+// FIXED: Extract handlers to prevent memory leaks
+function containerDragOver(e) {
+  e.preventDefault();
+  e.stopPropagation();
+}
+
+function containerDrop(e) {
+  e.preventDefault();
+  e.stopPropagation();
+  // Find the closest knob section
+  const target = e.target.closest('section[id^="knob-section-"]');
+  if (target) {
+    const knobId = target.id.replace('knob-section-', '');
+    handleDrop(e, knobId);
+  }
+}
+
 function createKnobSection(knobId) {
   const section = document.createElement('section');
+  section.id = `knob-section-${knobId}`;
   section.className = "bg-slate-800 rounded-lg shadow p-4 m-4 flex flex-col w-64 border border-slate-700 grow overflow-y-auto";
   
-  section.addEventListener('dragover', e => e.preventDefault());
-  section.addEventListener('drop', e => handleDrop(e, knobId));
+  // FIXED: Use proper event handler functions to prevent duplicates
+  const sectionHandlers = {
+    dragover: (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      e.dataTransfer.dropEffect = 'copy';
+      section.style.backgroundColor = 'rgba(99, 102, 241, 0.1)';
+    },
+    
+    dragenter: (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+    },
+    
+    dragleave: (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (!section.contains(e.relatedTarget)) {
+        section.style.backgroundColor = '';
+      }
+    },
+    
+    drop: (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      section.style.backgroundColor = '';
+      handleDrop(e, knobId);
+    }
+  };
+  
+  // Add all handlers
+  Object.entries(sectionHandlers).forEach(([event, handler]) => {
+    section.addEventListener(event, handler);
+  });
 
   section.appendChild(createKnobHeader(knobId));
 
@@ -82,13 +140,17 @@ function sanitizeAppName(name) {
 }
 
 function createAppCard(app, knobId) {
+  console.log(`[createAppCard] Creating card for app: ${app} on knob ${knobId}`);
+
   const card = document.createElement('div');
   card.className = "flex items-center gap-4 mb-3 p-3 rounded border border-gray-300 hover:bg-red-100 cursor-pointer transition overflow-hidden";
-
+  card.setAttribute('data-appname', app);
+  
   const icon = document.createElement('img');
   icon.alt = app;
   icon.className = "w-10 h-10 rounded sm:hidden md:block";
-
+  card.classList.add('app-card');
+  
   const label = document.createElement('div');
   label.id = app;
   label.textContent = sanitizeAppName(app);
@@ -98,71 +160,113 @@ function createAppCard(app, knobId) {
 
   // Remove app on click, then remove card DOM node only
   card.onclick = async () => {
+    console.log(`[createAppCard] Removing app ${app} from knob ${knobId}`);
     await removeAppFromKnob(knobId, app);
     card.remove();
   };
 
-  // Use cached icon if available
-  if (iconCache.has(app)) {    
+  if (iconCache.has(app)) {
     icon.src = iconCache.get(app);
   } else {
-    // Fetch icon and cache it, update img src once ready
     getAppIconForApp(app).then(src => {
       const finalSrc = src || 'assets/icons/default.png';
       iconCache.set(app, finalSrc);
       icon.src = finalSrc;
+      console.log(`[createAppCard] Icon loaded for ${app}`);
     }).catch(() => {
       icon.src = 'assets/icons/default.png';
+      console.warn(`[createAppCard] Failed to load icon for ${app}`);
     });
   }
 
   return card;
 }
 
-
 // --- Event Handlers ---
 async function handleDrop(event, knobId) {
   event.preventDefault();
+  event.stopPropagation();
+  console.log(`[handleDrop] Dropping on knob ${knobId}`);
+
+  // Safety check
+  if (!knobId) {
+    console.warn('[handleDrop] knobId is undefined or invalid');
+    return;
+  }
+
+  let droppedApp;
+  try {
+    droppedApp = event.dataTransfer.getData('text/plain');
+    console.log(`[handleDrop] droppedApp: "${droppedApp}"`);
+  } catch (err) {
+    console.error('[handleDrop] Failed to read dropped data:', err);
+    return;
+  }
+
+  if (!droppedApp) {
+    console.warn('[handleDrop] No app data found in drop');
+    return;
+  }
 
   try {
-    const droppedApp = event.dataTransfer.getData('text/plain');
-    if (!droppedApp) return;
-
+    // Ensure mapping structure exists
     if (!config.Mappings[knobId]) {
       config.Mappings[knobId] = { ProcessNames: [] };
-    } else if (!Array.isArray(config.Mappings[knobId].ProcessNames)) {
-      config.Mappings[knobId].ProcessNames = [];
     }
 
-    if (config.Mappings[knobId].ProcessNames.includes(droppedApp)) return;
+    const mapping = config.Mappings[knobId];
 
-    // Update data model synchronously
-    config.Mappings[knobId].ProcessNames.push(droppedApp);
+    if (!Array.isArray(mapping.ProcessNames)) {
+      mapping.ProcessNames = [];
+    }
 
-    // Immediately update UI (append card)
-    const container = document.getElementById('knobsAppsContainer');
-    const knobSection = [...container.children].find(section =>
-      section.querySelector('h2').textContent === `Knob ${knobId}`
-    );
+    // Avoid duplicate
+    if (mapping.ProcessNames.includes(droppedApp)) {
+      console.warn(`[handleDrop] "${droppedApp}" already mapped to knob ${knobId}`);
+      return;
+    }
 
-    if (!knobSection) return;
+    // Update config
+    mapping.ProcessNames.push(droppedApp);
+    console.log(`[handleDrop] Updated config:`, mapping.ProcessNames);
+  } catch (err) {
+    console.error('[handleDrop] Error updating config:', err);
+    return;
+  }
+
+  try {
+    // Update UI
+    const knobSection = document.getElementById(`knob-section-${knobId}`);
+    if (!knobSection) {
+      console.warn(`[handleDrop] No section found for knob ${knobId}`);
+      return;
+    }
+
+    const existingCard = knobSection.querySelector(`[data-appname="${droppedApp}"]`);
+    if (existingCard) {
+      console.warn(`[handleDrop] Card for "${droppedApp}" already exists in DOM`);
+      return;
+    }
 
     const emptyMsg = knobSection.querySelector('p');
-    if (emptyMsg && emptyMsg.textContent === 'No apps mapped.') {
+    if (emptyMsg?.textContent === 'No apps mapped.') {
       emptyMsg.remove();
+      console.log('[handleDrop] Removed empty message');
     }
 
+    // Append new app card
     knobSection.appendChild(createAppCard(droppedApp, knobId));
-
-    // Now save config asynchronously, but don’t await here
-    window.api.saveConfig(config).catch(err => {
-      console.error('Failed to save config after drop:', err);
-    });
+    console.log('[handleDrop] App card created and added');
   } catch (err) {
-    console.error('Drop event failed:', err);
+    console.error('[handleDrop] Error updating UI:', err);
+    return;
   }
-}
 
+  // Save config async
+  window.api.saveConfig(config).catch(err => {
+    console.error('[handleDrop] Failed to save config:', err);
+  });
+}
 
 // --- Helpers ---
 async function getAppIconForApp(app) {
@@ -179,67 +283,98 @@ async function getAppIconForApp(app) {
 }
 
 async function removeAppFromKnob(knobId, appName) {
-  const apps = config.Mappings[knobId]?.ProcessNames;
-  if (!apps) return;
+  const mapping = config.Mappings[knobId];
+  if (!mapping || !Array.isArray(mapping.ProcessNames)) return;
 
-  const idx = apps.indexOf(appName);
-  if (idx !== -1) {
-    apps.splice(idx, 1);
-    await window.api.saveConfig(config);
+  const idx = mapping.ProcessNames.indexOf(appName);
+  if (idx === -1) return;
 
-    const container = document.getElementById('knobsAppsContainer');
-    const knobSection = [...container.children].find(section => section.querySelector('h2').textContent === `Knob ${knobId}`);
-    if (!knobSection) return;
+  // Remove from config and persist
+  mapping.ProcessNames.splice(idx, 1);
+  await window.api.saveConfig(config);
 
-    const card = [...knobSection.children].find(child => {
-      const label = child.querySelector('div.text-lg');
-      return label && label.id === appName;
-    });
-    if (card) card.remove();
-
-    // If no apps left, show empty message
-    if (apps.length === 0) {
-      knobSection.appendChild(createEmptyMessage());
+  try {
+    const knobSection = document.getElementById(`knob-section-${knobId}`);
+    if (!knobSection) {
+      console.warn(`[removeAppFromKnob] No section for knob ${knobId}`);
+      return;
     }
+
+    const card = knobSection.querySelector(`[data-appname="${appName}"]`);
+    if (card) {
+      card.remove();
+      console.log(`[removeAppFromKnob] Removed card for "${appName}"`);
+    }
+
+    if (mapping.ProcessNames.length === 0) {
+      knobSection.appendChild(createEmptyMessage());
+      console.log(`[removeAppFromKnob] No apps left, added empty message`);
+    }
+  } catch (err) {
+    console.error('[removeAppFromKnob] UI update failed:', err);
   }
 }
 
 // --- Process Search ---
-
+// FIXED: Global reference to current search input to prevent duplicate listeners
+let currentSearchInput = null;
 
 function renderProcessSearch() {
-  
   const searchInput = document.getElementById('processSearch');  
   const list = document.getElementById('processList');
   if (!searchInput || !list) return;
 
-  searchInput.oninput = () => updateList(searchInput.value.toLowerCase());
+  // FIXED: Only replace if it's different to prevent infinite loops
+  if (currentSearchInput !== searchInput) {
+    // Remove old listener if exists
+    if (currentSearchInput) {
+      currentSearchInput.oninput = null;
+    }
+    
+    currentSearchInput = searchInput;
+    searchInput.oninput = () => updateList(searchInput.value.toLowerCase());
+  }
   
   updateList('');
 
   function updateList(filter) {
-    // Replace innerHTML with safer removal
+    // Clear existing items
     while (list.firstChild) list.removeChild(list.firstChild);
 
     runningProcesses
-      .filter(name => name.toLowerCase().includes(filter))
+      .filter(name => name && name.toLowerCase().includes(filter))
       .forEach(name => {
         const item = document.createElement('div');
         item.textContent = sanitizeAppName(name);
-        item.id = name;
+        item.id = `process-item-${name}`;
         item.className = 'px-2 py-1 bg-slate-700 text-indigo-200 rounded cursor-move hover:bg-indigo-600 transition whitespace-nowrap capitalize max-h-8';
 
-        // Use setAttribute for "draggable" instead of property
         item.setAttribute('draggable', 'true');
 
-        // Use addEventListener instead of direct assignment
-        item.addEventListener('dragstart', (e) => {
-          try {
-            e.dataTransfer.setData('text/plain', name);
-          } catch (err) {
-            console.error('Failed to set drag data:', err);
+        // FIXED: Use proper event handler function
+        const dragStartHandler = (e) => {
+          console.log("Dragging:", name);
+          
+          if (!name) {
+            e.preventDefault();
+            return;
           }
-        });
+          
+          // FIXED: Clear any existing data first
+          e.dataTransfer.clearData();
+          e.dataTransfer.setData('text/plain', name);
+          e.dataTransfer.effectAllowed = 'copy';
+          
+          // FIXED: Add visual feedback
+          item.style.opacity = '0.5';
+          
+          // Reset opacity after drag
+          setTimeout(() => {
+            item.style.opacity = '1';
+          }, 100);
+        };
+
+        item.addEventListener('dragstart', dragStartHandler);
 
         list.appendChild(item);
       });
@@ -356,9 +491,6 @@ document.getElementById('vmVersionSelect')?.addEventListener('change', async (e)
   await window.api.setVMVersion(selectedVersion);
 });
 
-
-
-
 window.api.onBackendStatus(({ type, message }) => {
   showAlert(type, message);
 });
@@ -415,9 +547,23 @@ function showAlert(type, message) {
   }, 4000);
 }
 
+// FIXED: Simplified global drag/drop handlers - only prevent file drops
+document.addEventListener('dragover', (e) => {
+  // Only prevent if it's a file being dragged from outside
+  if (e.dataTransfer.types.includes('Files')) {
+    e.preventDefault();
+    e.stopPropagation();
+  }
+});
 
+document.addEventListener('drop', (e) => {
+  // Only prevent if it's a file being dragged from outside
+  if (e.dataTransfer.types.includes('Files')) {
+    e.preventDefault();
+    e.stopPropagation();
+  }
+});
 
+// Initialize
 setupTabs();
 renderComPortSettings();
-
-
