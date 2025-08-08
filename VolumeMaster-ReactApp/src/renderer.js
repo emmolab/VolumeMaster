@@ -513,16 +513,16 @@ function renderProcessSearch() {
 }
 
 // --- COM Port Settings ---
-async function renderComPortSettings() {
+async function refreshComPortListPreservingSelection() {
   const select = document.getElementById('comPortSelect');
   if (!select) return;
 
-  const [ports, current] = await Promise.all([
+  const selectedValue = select.value;
+
+  const [ports, savedPort] = await Promise.all([
     window.api.listSerialPorts(),
     window.api.getComPort(),
   ]);
-
-  select.className = "w-full p-2 text-sm bg-slate-700 text-indigo-200 rounded border border-slate-600 focus:outline-indigo-500 focus:ring-1 focus:ring-indigo-500";
 
   select.innerHTML = '';
 
@@ -534,32 +534,42 @@ async function renderComPortSettings() {
     return;
   }
 
-  // Fix mismatched config port by defaulting to first detected port & update config
-  let effectivePort = current;
-  if (!current || !ports.some(p => p.path === current)) {
-    effectivePort = ports[0].path;
-    await window.api.setComPort(effectivePort);
-    console.log('[COM port auto-updated to]', effectivePort);
+  // Determine what should be selected
+  let effectivePort = null;
+
+  if (ports.some(p => p.path === selectedValue)) {
+    effectivePort = selectedValue; // User's current selection is valid
+  } else if (ports.some(p => p.path === savedPort)) {
+    effectivePort = savedPort; // Saved config is still valid
+  } else {
+    effectivePort = ports[0].path; // Fallback to first available
+    await window.api.setComPort(effectivePort); // Update config
+    console.log('[COM port fallback]', effectivePort);
   }
 
   ports.forEach(port => {
     const opt = document.createElement('option');
     opt.value = port.path;
-    opt.textContent = `${port.path} (${port.manufacturer})`;
+    opt.textContent = `${port.path}${port.manufacturer ? ` (${port.manufacturer})` : ''}`;
     if (port.path === effectivePort) opt.selected = true;
     select.appendChild(opt);
   });
-
-  select.onchange = async () => {
-    const newPort = select.value;
-    await window.api.setComPort(newPort);
-    alert(`COM port set to: ${newPort}`);
-  };
 }
 
-document.getElementById('comPortSelect')?.addEventListener('click', async () => { 
-  renderComPortSettings();
+
+// Set port on manual change
+document.getElementById('comPortSelect')?.addEventListener('change', async (e) => {
+  const newPort = e.target.value;
+  await window.api.setComPort(newPort);
+  console.log('[Renderer] COM port updated to:', newPort);
 });
+
+// Auto-refresh list when user focuses (clicks or tabs into) the dropdown
+document.getElementById('comPortSelect')?.addEventListener('focus', () => {
+  refreshComPortListPreservingSelection();
+});
+  
+
 
 // --- Tabs ---
 function setupTabs() {
@@ -701,5 +711,8 @@ document.addEventListener('drop', (e) => {
 });
 
 // Initialize
-setupTabs();
-renderComPortSettings();
+
+document.addEventListener('DOMContentLoaded', () => {
+  setupTabs();
+  refreshComPortListPreservingSelection();
+});
