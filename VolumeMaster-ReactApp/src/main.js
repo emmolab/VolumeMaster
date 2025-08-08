@@ -63,6 +63,13 @@ function loadConfig() {
       configCache = yaml.parse(file);
     }
   }
+  if(configCache.vm === undefined) {
+    configCache.vm = false; // Default to false if not set
+  }
+  if(configCache.vmversion === undefined) {
+    configCache.vmversion = 'banana'; // Default to 'banana' if not set
+  }
+  saveConfig(configCache); // Ensure config is saved with defaults
   return configCache;
 }
 

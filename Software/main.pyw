@@ -3,8 +3,12 @@ import os
 import yaml
 import serial
 import atexit
-from pycaw.pycaw import AudioUtilities, ISimpleAudioVolume
+from pycaw.pycaw import AudioUtilities, ISimpleAudioVolume, IAudioEndpointVolume
+from comtypes import CLSCTX_ALL
 import serial.tools.list_ports
+import time
+from collections import deque
+
 
 def find_arduino_port():
     for port in serial.tools.list_ports.comports():
@@ -69,7 +73,6 @@ serial_conn = setup_serial(config, default_com)
 # Setup Voicemeeter if enabled
 set_input_gain = set_output_gain = set_button_toggle = None
 if config.get('vm'):
-    print("Setting up Voicemeeter...")
     set_input_gain, set_output_gain, set_button_toggle = setup_voicemeeter(config)
 
 atexit.register(lambda: vmr.logout() if veme else None)
@@ -92,8 +95,7 @@ for key, val in config.get('Mappings', {}).items():
 
     # Handle VoiceMeeter (can be None or list)
     vm = val.get('VoiceMeeter')
-    
-    if config.get('vm') and vm is not None:
+    if vm:
         if isinstance(vm, list):
             entry['vm'] = [v.strip() for v in vm if isinstance(v, str) and v.strip()]
         elif isinstance(vm, str):
@@ -129,7 +131,6 @@ def setup_audio_interfaces():
 
 
 def process_audio_change(index, value):
-    sessions = AudioUtilities.GetAllSessions()
     mapping = mappings.get(index, {})
     volume_scalar = round(value / 100, 2)
 
@@ -149,32 +150,50 @@ def process_audio_change(index, value):
                         pass  # Session disappeared mid-loop
 
     # Voicemeeter targets
-    if 'vm' in mapping:
+    if config.get('vm') and 'vm' in mapping:
         for target in mapping['vm']:
             if target.lower().startswith('input'):
                 set_input_gain(target.strip('Input'), value)
             elif target.lower().startswith('output'):
                 set_output_gain(target.strip('Output'), value)
 
+
+
 def main():
-    call_counter = 0
+    
+    
+    volumes = {}                # Last applied values per channel
+    volume_cache = deque()      # Queue of (index, value) tuples to process in order
+    last_update_time = 0
+    update_interval = 0.00001     # 30 ms between sending volume changes
+    timeSinceLastSerialInput = None
+
+    setup_audio_interfaces()
+
     while True:
+        now = time.monotonic()
+        if volume_cache:
+            if serial_conn.timeout != 0:
+                serial_conn.timeout = 0  # Non-blocking
+        else:
+            if serial_conn.timeout is not None:
+                serial_conn.timeout = None  # Blocking
+        # Read serial input
         try:
             line = serial_conn.readline().decode().strip()
         except:
             sys.exit("Serial disconnect error.")
 
+
         if '@' in line:
             try:
                 value_str, index_str = line.split('@')
                 value, index = int(value_str), int(index_str)
+                timeSinceLastSerialInput = time.time()
+                volume_cache.append((index, value))  # Add to queue, do NOT overwrite
             except ValueError:
                 print("Malformed input:", line)
                 continue
-
-            if index in volumes and value != volumes[index]:
-                volumes[index] = value
-                process_audio_change(index, value)
 
         elif veme:
             if line.endswith('!='):
@@ -182,5 +201,24 @@ def main():
             else:
                 set_button_toggle(line.strip('='), True)
 
+        # Every update_interval seconds, send all volume changes if any cached
+        if now - last_update_time >= update_interval and volume_cache:
+            while volume_cache:
+                if not volume_cache:
+                    break
+                index, val = volume_cache.popleft()  # Get oldest update
+
+                # Optional: Skip if this value is same as last applied
+                if index not in volumes or volumes[index] != val:
+                    volumes[index] = val
+                    process_audio_change(index, val)
+
+                last_update_time = now
+        
+
+        # Refresh interfaces if no serial input for 3 seconds
+        if timeSinceLastSerialInput and time.time() - timeSinceLastSerialInput > 3:
+            setup_audio_interfaces()
+            timeSinceLastSerialInput = None
 if __name__ == "__main__":
     main()
