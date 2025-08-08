@@ -229,7 +229,7 @@ let retryTimeout = null;
 function startBackendWithRetry() {
   if (backendProcess) {
     console.log('Backend already running');
-    return;
+    return
   }
 
   console.log('Attempting to start backend...');
@@ -243,6 +243,7 @@ function startBackendWithRetry() {
      if (tray) tray.setImage(trayIconNormal);
      console.log('Backend running...');
      sendStatusToRenderer('success', 'Backend started successfully.');
+     tray.setImage(iconPathNormal);
   }
   backendProcess.stdout.on('data', data => {
     console.log(`[Backend stdout] ${data}`);
@@ -252,11 +253,14 @@ function startBackendWithRetry() {
   backendProcess.stderr.on('data', data => {
     console.error(`[Backend stderr] ${data}`);
     sendStatusToRenderer('error', `[Backend stderr] ${data}`);
+    tray.setImage(iconPathCrashed);
+    scheduleRetry();
   });
 
   backendProcess.on('error', err => {
     console.error('[Backend error]', err);
     sendStatusToRenderer('error', `Backend error: ${err.message}`);
+    tray.setImage(iconPathCrashed);
     scheduleRetry();
   });
 
@@ -264,7 +268,8 @@ function startBackendWithRetry() {
     console.log(`[Backend exited with code ${code}]`);
      sendStatusToRenderer('warning', `Backend exited with code ${code}`);
     backendProcess = null;
-    scheduleRetry();
+    tray.setImage(iconPathCrashed);
+    
   });
 }
 function sendStatusToRenderer(type, message) {
@@ -354,8 +359,7 @@ function createWindow() {
 }
 
 function createTray() {
-  const iconPath = path.join(__dirname, 'assets', 'icons', 'icongreen.ico'); // Use your tray icon path
-  const trayIcon = nativeImage.createFromPath(iconPath);
+  const trayIcon = nativeImage.createFromPath(iconPathNormal);
   
   tray = new Tray(trayIcon);
   
