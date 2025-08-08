@@ -106,8 +106,6 @@ buttons = {
 }
 
 volumes = {k: 0 for k in mappings}
-<<<<<<< Updated upstream
-=======
 session_cache = {}
 master_volume_interface = None
 
@@ -128,7 +126,6 @@ def setup_audio_interfaces():
         devices = AudioUtilities.GetSpeakers()
         interface = devices.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
         master_volume_interface = interface.QueryInterface(IAudioEndpointVolume)
->>>>>>> Stashed changes
 
 
 def process_audio_change(index, value):
@@ -137,18 +134,11 @@ def process_audio_change(index, value):
     volume_scalar = round(value / 100, 2)
 
     if 'apps' in mapping:
-<<<<<<< Updated upstream
-        for session in sessions:
-            if session.Process and session.Process.name() in mapping['apps']:
-                volume = session._ctl.QueryInterface(ISimpleAudioVolume)
-                volume.SetMasterVolume(round(value / 100, 2), None)
-=======
         for name in mapping['apps']:
             # Master volume
             if name.lower() == 'master' and master_volume_interface:
                 master_volume_interface.SetMasterVolumeLevelScalar(volume_scalar, None)
                 continue
->>>>>>> Stashed changes
 
             target_str = name.lower()
             for (pid, exe_name), session in list(session_cache.items()):
@@ -166,10 +156,6 @@ def process_audio_change(index, value):
             elif target.lower().startswith('output'):
                 set_output_gain(target.strip('Output'), value)
 
-<<<<<<< Updated upstream
-=======
-
->>>>>>> Stashed changes
 def main():
     call_counter = 0
     while True:
