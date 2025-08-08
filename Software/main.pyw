@@ -68,7 +68,8 @@ serial_conn = setup_serial(config, default_com)
 
 # Setup Voicemeeter if enabled
 set_input_gain = set_output_gain = set_button_toggle = None
-if config.get('vm') == 'true':
+if str(config.get('vm')).lower() == 'true':
+    print("Setting up Voicemeeter...")
     set_input_gain, set_output_gain, set_button_toggle = setup_voicemeeter(config)
 
 atexit.register(lambda: vmr.logout() if veme else None)
@@ -91,7 +92,8 @@ for key, val in config.get('Mappings', {}).items():
 
     # Handle VoiceMeeter (can be None or list)
     vm = val.get('VoiceMeeter')
-    if vm:
+    
+    if config.get('vm') and vm is not None:
         if isinstance(vm, list):
             entry['vm'] = [v.strip() for v in vm if isinstance(v, str) and v.strip()]
         elif isinstance(vm, str):
@@ -104,17 +106,49 @@ buttons = {
 }
 
 volumes = {k: 0 for k in mappings}
+session_cache = {}
+master_volume_interface = None
+
+def setup_audio_interfaces():
+    global session_cache, master_volume_interface
+    sessions = AudioUtilities.GetAllSessions()
+    session_cache.clear()
+
+    for session in sessions:
+        if session.Process:
+            pid = session.Process.pid
+            exe_name = session.Process.name()
+            # Store by PID so multiple sessions from same exe are preserved
+            session_cache[(pid, exe_name)] = session._ctl.QueryInterface(ISimpleAudioVolume)
+
+    # Preload master volume interface if any mapping uses it
+    if any('master' in entry.get('apps', []) for entry in mappings.values()):
+        devices = AudioUtilities.GetSpeakers()
+        interface = devices.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
+        master_volume_interface = interface.QueryInterface(IAudioEndpointVolume)
+
 
 def process_audio_change(index, value):
     sessions = AudioUtilities.GetAllSessions()
     mapping = mappings.get(index, {})
+    volume_scalar = round(value / 100, 2)
 
     if 'apps' in mapping:
-        for session in sessions:
-            if session.Process and session.Process.name() in mapping['apps']:
-                volume = session._ctl.QueryInterface(ISimpleAudioVolume)
-                volume.SetMasterVolume(round(value / 100, 2), None)
+        for name in mapping['apps']:
+            # Master volume
+            if name.lower() == 'master' and master_volume_interface:
+                master_volume_interface.SetMasterVolumeLevelScalar(volume_scalar, None)
+                continue
 
+            target_str = name.lower()
+            for (pid, exe_name), session in list(session_cache.items()):
+                if target_str in exe_name.lower():
+                    try:
+                        session.SetMasterVolume(volume_scalar, None)
+                    except Exception:
+                        pass  # Session disappeared mid-loop
+
+    # Voicemeeter targets
     if 'vm' in mapping:
         for target in mapping['vm']:
             if target.lower().startswith('input'):
