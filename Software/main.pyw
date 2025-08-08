@@ -68,7 +68,7 @@ serial_conn = setup_serial(config, default_com)
 
 # Setup Voicemeeter if enabled
 set_input_gain = set_output_gain = set_button_toggle = None
-if str(config.get('vm')).lower() == 'true':
+if config.get('vm'):
     print("Setting up Voicemeeter...")
     set_input_gain, set_output_gain, set_button_toggle = setup_voicemeeter(config)
 
