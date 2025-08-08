@@ -13,6 +13,7 @@ contextBridge.exposeInMainWorld('api', {
   onBackendStatus: (callback) => ipcRenderer.on('backend-status', (_, data) => callback(data)),
   enableVM: () => ipcRenderer.invoke('enable-vm'),
   disableVM: () => ipcRenderer.invoke('disable-vm'),
+  getVMEnabled: () => ipcRenderer.invoke('get-vm-enabled'),
   setVMVersion: (version) => ipcRenderer.invoke('set-vm-version', version),
   getVMVersion: () => ipcRenderer.invoke('get-vm-version'),
   

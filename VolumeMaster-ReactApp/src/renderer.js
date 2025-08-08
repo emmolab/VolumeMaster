@@ -8,7 +8,17 @@ let iconCache = new Map();
 window.api.loadConfig().then(data => {
   config = data || { Mappings: {}};
   renderAllKnobsAndApps();
+
+  window.api.getVMEnabled().then(enabled => {
+    if(enabled) {
+      document.getElementById('vmEnableButton').textContent = "Enabled";
+    } else {
+      document.getElementById('vmEnableButton').textContent = "Disabled";
+    }
+  });
+
 });
+
 loadProcessList();
 
 // --- Data Loading ---
@@ -610,6 +620,7 @@ document.getElementById('vmEnableButton')?.addEventListener('click', async () =>
   if (newState) {
     button.classList.remove('bg-red-500', 'hover:bg-red-600');
     button.classList.add('bg-green-500', 'hover:bg-green-600');
+    await window.api.enableVM();
   } else {
     button.classList.remove('bg-green-500', 'hover:bg-green-600');
     button.classList.add('bg-red-500', 'hover:bg-red-600');
@@ -699,6 +710,7 @@ document.addEventListener('drop', (e) => {
     e.stopPropagation();
   }
 });
+
 
 // Initialize
 setupTabs();

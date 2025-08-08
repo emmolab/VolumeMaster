@@ -321,11 +321,28 @@ ipcMain.handle('disable-vm', async () => {
   saveConfig(config);  
 });
 
+ipcMain.handle('get-vm-enabled', () => {
+  const config = loadConfig();
+
+  console.log('VM Enabled (raw):', config.vm);
+
+  // Normalize to boolean: true only if boolean true or string "true" (case-insensitive)
+  const vmEnabled = (config.vm === true || (typeof config.vm === 'string' && config.vm.toLowerCase() === 'true'));
+
+  return vmEnabled;
+});
+
+
 ipcMain.handle('set-vm-version', async (_, version) => {
   const config = loadConfig();
   config.vmversion = version;
   
   saveConfig(config);
+});
+
+ipcMain.handle('get-vm-version', () => {
+  const config = loadConfig();  
+  return config.vmversion || 'banana'; // Default to 'banana' if not set
 });
 
 // --- App Lifecycle ---
