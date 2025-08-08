@@ -1,20 +1,21 @@
-comport: COM3
+comport: COM9
 baudrate: 9600
 bytesize: 8
 parity: N
 stopbits: 1
-VM: N
+vm: true
 vmversion: banana
 Mappings:
   "1":
-    ProcessNames: []
-    VoiceMeeter: null
+    ProcessNames: [Discord.exe]
+    VoiceMeeter: ""
   "2":
-    ProcessNames: []
-    VoiceMeeter: null
+    ProcessNames: [master]
+    VoiceMeeter: Input1
   "3":
-    ProcessNames: []
-    VoiceMeeter: null
+    ProcessNames:
+      -
+    VoiceMeeter: Output1
   "4":
     ProcessNames: []
-    VoiceMeeter: null
+    VoiceMeeter: ""
