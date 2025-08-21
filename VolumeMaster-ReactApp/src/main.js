@@ -215,7 +215,7 @@ ipcMain.handle('list-serial-ports', async () => {
 
 ipcMain.handle('get-com-port', () => {
   const config = loadConfig();
-  return config.comPort || null;
+  return config.comport || null;
 });
 
 ipcMain.handle('set-com-port', (_, port) => {
