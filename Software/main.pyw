@@ -165,6 +165,7 @@ def main():
     volumes = {}                # Last applied values per channel
     volume_cache = deque()      # Queue of (index, value) tuples to process in order
     last_update_time = 0
+    timeSinceLastRefresh = time.time()
     update_interval = 0.00001     # 30 ms between sending volume changes
     timeSinceLastSerialInput = None
 
@@ -216,9 +217,10 @@ def main():
                 last_update_time = now
         
 
-        # Refresh interfaces if no serial input for 3 seconds
-        if timeSinceLastSerialInput and time.time() - timeSinceLastSerialInput > 3:
+        # Refresh interfaces every 2 seconds 
+        if  time.time() - timeSinceLastRefresh > 2:            
+            timeSinceLastRefresh = time.time()
             setup_audio_interfaces()
-            timeSinceLastSerialInput = None
+            
 if __name__ == "__main__":
     main()

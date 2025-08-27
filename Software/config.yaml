@@ -3,19 +3,22 @@ baudrate: 9600
 bytesize: 8
 parity: N
 stopbits: 1
-vm: false
-vmversion: banana
 Mappings:
   "1":
-    ProcessNames: [Discord.exe]
-    VoiceMeeter: ""
+    ProcessNames:
+      - master
+    VoiceMeeter: null
   "2":
-    ProcessNames: [master]
-    VoiceMeeter: Input1
+    ProcessNames:
+      - steam.exe
+    VoiceMeeter: null
   "3":
     ProcessNames:
-      -
-    VoiceMeeter: Output1
+      - Spotify.exe
+    VoiceMeeter: null
   "4":
-    ProcessNames: []
-    VoiceMeeter: ""
+    ProcessNames:
+      - firefox.exe
+    VoiceMeeter: null
+vm: false
+vmversion: banana
