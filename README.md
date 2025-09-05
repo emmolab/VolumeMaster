@@ -41,18 +41,14 @@ Alternatively  you can use the [source code](https://github.com/Wilsondotzip/Har
 - System notifications when things go wrong
 - A headless software varient
 - Full Windows support
-- VoiceMeeter integration, control voicemeeter tracks with your HAMixer! *Please note this feature is still in developement and is currently SLOW but useable, we are working to solve this.*
-- 
+- VoiceMeeter integration, control voicemeeter tracks
 ## What’s to come...
 This project is still in active development, so here are some of the features we plan to add in the future.
 
 - Linux support. Its getting there... (We will need to remake the backend script from the ground up for this.)
 - More cases! I mean more! All of the cases, every case. Front controls top controls you name it!
-- A pretty UI that has easy to customize colours.
-- Verified firmware support for other microcontrollers, not everyone has an Arduino Uno. How about an Arduino Micro, or ESP?
 - Not yet sure how to do this one but somewhere down the line we would like to add control over hardware devices like microphones and speakers.
 - Buttons for possible functions like muting and config switching. 
-- In the long run It would be great to have a custom PCB, to make easy to build kits possible.
-- Have an idea? Let us know. 
+
 
 
