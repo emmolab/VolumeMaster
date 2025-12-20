@@ -155,7 +155,7 @@ class AppSelectorDialog(QDialog):
 class MainWindow(QWidget):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Volume Master")
+        self.setWindowTitle("VolumeMaster")
         self.resize(480, 620)
 
         self.settings = QSettings("VolumeMaster", "VolumeMaster")
