@@ -52,7 +52,13 @@ as Gaming, Music, or Work.
 INSTALLATION
 ====================================================================
 
-1) Download the latest VolumeMaster AppImage.
+1) Clone the repo
+
+2) cd to VolumeMaster-Linux
+
+3) Then run the build script:
+
+    ./build-app-image.sh
 
 2) Make the AppImage executable:
 
