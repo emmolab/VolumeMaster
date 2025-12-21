@@ -23,8 +23,8 @@ SERIAL_PORT = "/dev/ttyUSB0"
 BAUD_RATE = 9600
 NUM_POTS = 4
 APP_REFRESH_INTERVAL = 12000  # ms → 12 seconds
-DEBOUNCE_THRESHOLD = 3        # % minimum change to trigger update
-VOLUME_APPLY_DELAY = 80      # ms – time to wait after last change before applying volume
+DEBOUNCE_THRESHOLD = 1        # % minimum change to trigger update
+VOLUME_APPLY_DELAY = 10      # ms – time to wait after last change before applying volume
 
 # -----------------------
 # PipeWire helpers
@@ -131,7 +131,7 @@ class SerialWorker(QObject):
                                     v = int(v_str.strip())
                                     k = int(k_str.strip()) - 1
                                     if 0 <= k < self.count and 0 <= v <= 100:
-                                        if abs(v - values[k]) >= 2:
+                                        if abs(v - values[k]) > DEBOUNCE_THRESHOLD:
                                             values[k] = v
                                             self.pot_values.emit(values.copy())
                                 except ValueError:
