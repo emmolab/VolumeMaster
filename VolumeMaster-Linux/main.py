@@ -2,19 +2,18 @@
 import sys
 import os
 import threading
-import subprocess
 import serial
 import time
-import json
-
+import pulsectl
+import queue
 from PySide6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QLabel,
     QPushButton, QListWidget, QListWidgetItem,
     QHBoxLayout, QDialog, QFrame, QComboBox,
-    QSlider, QMessageBox, QInputDialog
+    QSlider, QMessageBox, QInputDialog, QGridLayout
 )
-from PySide6.QtCore import Signal, QObject, QTimer, Qt, QSettings
-from PySide6.QtGui import QIcon
+from PySide6.QtCore import Signal, QObject, Qt, QSettings, QSize
+from PySide6.QtGui import QIcon, QFont
 
 # -----------------------
 # Configuration
@@ -22,421 +21,292 @@ from PySide6.QtGui import QIcon
 SERIAL_PORT = "/dev/ttyUSB0"
 BAUD_RATE = 9600
 NUM_POTS = 4
-APP_REFRESH_INTERVAL = 12000  # ms → 12 seconds
-DEBOUNCE_THRESHOLD = 1        # % minimum change to trigger update
-VOLUME_APPLY_DELAY = 10      # ms – time to wait after last change before applying volume
 
-# -----------------------
-# PipeWire helpers
-# -----------------------
-def set_volume(client_ids, volume: float):
-    if not client_ids:
-        return
-    volume = max(0.0, min(volume, 1.0))
-    for cid in client_ids:
-        subprocess.run(
-            ["wpctl", "set-volume", str(cid), f"{volume:.2f}"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL
-        )
+class PulseCore:
+    def __init__(self):
+        self.pulse = pulsectl.Pulse('VolumeMaster-Core')
+        self._lock = threading.Lock()
 
-def set_master_volume(volume: float):
-    volume = max(0.0, min(volume, 1.0))
-    subprocess.run(
-        ["wpctl", "set-volume", "@DEFAULT_AUDIO_SINK@", f"{volume:.2f}"],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL
-    )
-
-def pot_to_volume(val: int) -> float:
-    return val / 100.0
-
-# -----------------------
-# Robust PipeWire app detection
-# -----------------------
-def get_pipewire_clients_grouped():
-    grouped = {}
-    try:
-        result = subprocess.run(
-            ["pw-dump"], capture_output=True, text=True, check=True, timeout=10
-        )
-        data = json.loads(result.stdout)
-        for obj in data:
-            if obj.get("type") != "PipeWire:Interface:Node":
-                continue
-            props = obj.get("info", {}).get("props", {})
-            app_name = props.get("application.name") or props.get("node.name")
-            if not app_name or app_name in ("WirePlumber", "pipewire", "libcanberra", "pipewire-media-session"):
-                continue
-            media_class = props.get("media.class", "")
-            if "Audio/Sink" not in media_class and "Stream/Output/Audio" not in media_class:
-                continue
-            node_id = obj["id"]
-            grouped.setdefault(app_name, []).append(node_id)
-    except Exception:
-        return _fallback_get_clients()
-    return grouped
-
-def _fallback_get_clients():
-    grouped = {}
-    try:
-        result = subprocess.run(["wpctl", "status"], capture_output=True, text=True)
-        for line in result.stdout.splitlines():
-            line = line.strip()
-            if not line or not line[0].isdigit():
-                continue
-            parts = line.split(None, 2)
+    def set_app_vol_bulk(self, app_name, vol_float):
+        if not app_name: return
+        with self._lock:
             try:
-                cid = int(parts[0].rstrip('.'))
-                name = parts[1]
-                if name not in ("WirePlumber", "pipewire", "libcanberra"):
-                    grouped.setdefault(name, []).append(cid)
-            except Exception:
-                pass
-    except Exception:
-        pass
-    return grouped
+                for si in self.pulse.sink_input_list():
+                    name = si.proplist.get('application.name') or si.proplist.get('media.name')
+                    if name == app_name:
+                        self.pulse.volume_set_all_chans(si, vol_float)
+            except: pass
 
-# -----------------------
-# Serial worker with auto-reconnect
-# -----------------------
-class SerialWorker(QObject):
-    pot_values = Signal(list)
+    def set_master_vol(self, vol_float):
+        with self._lock:
+            try:
+                sink = self.pulse.get_sink_by_name(self.pulse.server_info().default_sink_name)
+                self.pulse.volume_set_all_chans(sink, vol_float)
+            except: pass
 
-    def __init__(self, port, baud, count):
+    def get_apps(self):
+        with self._lock:
+            try:
+                return sorted({si.proplist.get('application.name') or si.proplist.get('media.name') 
+                               for si in self.pulse.sink_input_list() if si.proplist.get('application.name')})
+            except: return []
+
+class FastMonitor(QObject):
+    def __init__(self, state):
         super().__init__()
-        self.port = port
-        self.baud = baud
-        self.count = count
-        self.running = True
-
-    def stop(self):
-        self.running = False
+        self.state = state
+        self.lazy_queue = queue.Queue()
+        threading.Thread(target=self._lazy_worker, daemon=True).start()
 
     def run(self):
-        values = [0] * self.count
-
-        while self.running:
-            try:
-                ser = serial.Serial(self.port, self.baud, timeout=1)
-                print(f"Serial connected: {self.port}")
-
-                while self.running:
-                    try:
-                        if ser.in_waiting > 0:
-                            line = ser.readline().decode('utf-8', errors="ignore").strip()
-                            if "@" in line:
-                                try:
-                                    v_str, k_str = line.split("@")
-                                    v = int(v_str.strip())
-                                    k = int(k_str.strip()) - 1
-                                    if 0 <= k < self.count and 0 <= v <= 100:
-                                        if abs(v - values[k]) > DEBOUNCE_THRESHOLD:
-                                            values[k] = v
-                                            self.pot_values.emit(values.copy())
-                                except ValueError:
-                                    continue
-                        else:
-                            time.sleep(0.01)
-                    except serial.SerialException:
-                        break
-                    except Exception:
-                        pass
-
-                ser.close()
-            except Exception as e:
-                print(f"Serial connection failed: {e}. Retrying in 5 seconds...")
-                time.sleep(5)
-
-# -----------------------
-# App selector dialog
-# -----------------------
-class AppSelectorDialog(QDialog):
-    def __init__(self, parent, apps, selected):
-        super().__init__(parent)
-        self.setWindowTitle("Select Apps")
-        self.resize(350, 450)
-        self.selected = selected.copy()
-
-        layout = QVBoxLayout(self)
-        self.list = QListWidget()
-        layout.addWidget(self.list)
-        self.refresh(apps)
-
-        btns = QHBoxLayout()
-        refresh_btn = QPushButton("Refresh Apps")
-        ok_btn = QPushButton("OK")
-        refresh_btn.clicked.connect(lambda: self.refresh(get_pipewire_clients_grouped()))
-        ok_btn.clicked.connect(self.accept)
-        btns.addWidget(refresh_btn)
-        btns.addWidget(ok_btn)
-        layout.addLayout(btns)
-
-    def refresh(self, apps):
-        self.list.clear()
-        for name in sorted(apps.keys()):
-            item = QListWidgetItem(name)
-            item.setCheckState(Qt.Checked if name in self.selected else Qt.Unchecked)
-            self.list.addItem(item)
-
-    def accept(self):
-        self.selected = [
-            self.list.item(i).text()
-            for i in range(self.list.count())
-            if self.list.item(i).checkState() == Qt.Checked
-        ]
-        super().accept()
-
-# -----------------------
-# Main window with rate-limited volume application
-# -----------------------
-class MainWindow(QWidget):
-    def __init__(self):
-        super().__init__()
-        self.setWindowTitle("VolumeMaster")
-        self.resize(500, 650)
-
-        self.settings = QSettings("VolumeMaster", "VolumeMaster")
-        self.available_apps = {}
-        self.last_values = [0] * NUM_POTS
-        self.knob_apps = [[] for _ in range(NUM_POTS)]
-
-        # Master knob
-        self.master_knob = self.settings.value("master_knob", None)
-        if self.master_knob == "None":
-            self.master_knob = None
-        elif self.master_knob is not None:
-            self.master_knob = int(self.master_knob)
-
-        # Rate limiting setup
-        self.pending_volumes = [None] * NUM_POTS  # None or float (master) or tuple(volume, list[ids])
-        self.timers = [QTimer(self) for _ in range(NUM_POTS)]
-        for i, timer in enumerate(self.timers):
-            timer.setSingleShot(True)
-            timer.timeout.connect(lambda k=i: self._apply_pending_volume(k))
-
-        layout = QVBoxLayout(self)
-
-        # Master selector
-        top = QHBoxLayout()
-        top.addWidget(QLabel("Master Volume Knob:"))
-        self.master_combo = QComboBox()
-        self.master_combo.addItem("None", None)
-        for i in range(NUM_POTS):
-            self.master_combo.addItem(f"Knob {i + 1}", i)
-        self.master_combo.setCurrentIndex(0 if self.master_knob is None else self.master_knob + 1)
-        self.master_combo.currentIndexChanged.connect(self.save_master)
-        top.addWidget(self.master_combo)
-        layout.addLayout(top)
-
-        self.labels = []
-        self.sliders = []
-        self.app_labels = []
-
-        for i in range(NUM_POTS):
-            frame = QFrame()
-            frame.setFrameShape(QFrame.StyledPanel)
-            fl = QVBoxLayout(frame)
-
-            label = QLabel(f"Knob {i + 1}: 0%")
-            slider = QSlider(Qt.Horizontal)
-            slider.setRange(0, 100)
-            slider.setEnabled(False)
-
-            apps = QLabel("Apps: None")
-            apps.setWordWrap(True)
-
-            btn = QPushButton("Select Apps")
-            btn.clicked.connect(lambda _, k=i: self.select_apps(k))
-
-            fl.addWidget(label)
-            fl.addWidget(slider)
-            fl.addWidget(apps)
-            fl.addWidget(btn)
-
-            layout.addWidget(frame)
-
-            self.labels.append(label)
-            self.sliders.append(slider)
-            self.app_labels.append(apps)
-
-        # Profile buttons
-        prof = QHBoxLayout()
-        for text, slot in [("Save Profile", self.save_profile),
-                           ("Load Profile", self.load_profile),
-                           ("Delete Profile", self.delete_profile)]:
-            btn = QPushButton(text)
-            btn.clicked.connect(slot)
-            prof.addWidget(btn)
-        layout.addLayout(prof)
-
-        self.load_settings()
-        self.refresh_apps()
-
-        self.timer = QTimer(self)
-        self.timer.timeout.connect(self.refresh_apps)
-        self.timer.start(APP_REFRESH_INTERVAL)
-
-    def _normalize_apps(self, value):
-        if value is None:
-            return []
-        if isinstance(value, list):
-            return value
-        if isinstance(value, str):
-            return [value]
         try:
-            return list(value)
-        except Exception:
-            return []
+            with pulsectl.Pulse('VolumeMaster-Monitor') as pulse:
+                pulse.event_mask_set('sink_input')
+                pulse.event_callback_set(self._on_event)
+                while True:
+                    pulse.event_listen()
+        except: pass
 
-    # -----------------------
-    # Persistence
-    # -----------------------
+    def _on_event(self, ev):
+        threading.Thread(target=self._instant_clamp, args=(ev.index,), daemon=True).start()
+
+    def _instant_clamp(self, index):
+        try:
+            with pulsectl.Pulse('VolumeMaster-Instant') as p:
+                si = p.sink_input_info(index)
+                name = si.proplist.get('application.name') or si.proplist.get('media.name')
+                if not name:
+                    self.lazy_queue.put(index)
+                    return
+                for k_idx, apps in enumerate(self.state['knob_apps']):
+                    if name in apps:
+                        target = self.state['pot_values'][k_idx] / 100.0
+                        if abs(si.volume.value_flat - target) > 0.01:
+                            p.volume_set_all_chans(si, target)
+        except: pass
+
+    def _lazy_worker(self):
+        with pulsectl.Pulse('VolumeMaster-Lazy') as p:
+            while True:
+                index = self.lazy_queue.get()
+                for delay in [0.02, 0.05, 0.1]:
+                    time.sleep(delay)
+                    try:
+                        si = p.sink_input_info(index)
+                        name = si.proplist.get('application.name') or si.proplist.get('media.name')
+                        if name:
+                            for k_idx, apps in enumerate(self.state['knob_apps']):
+                                if name in apps:
+                                    p.volume_set_all_chans(si, self.state['pot_values'][k_idx] / 100.0)
+                            break
+                    except: break
+                self.lazy_queue.task_done()
+
+class MainWindow(QWidget):
+    def __init__(self, pc):
+        super().__init__()
+        self.pc = pc
+        self.settings = QSettings("VolumeMaster", "VolumeMaster")
+        self.setWindowTitle("VolumeMaster")
+        self.setMinimumSize(580, 720)
+        
+        icon_path = os.path.join(os.path.dirname(__file__), "icon.png")
+        if os.path.exists(icon_path):
+            self.setWindowIcon(QIcon(icon_path))
+        
+        self.state = {'knob_apps': [[] for _ in range(NUM_POTS)], 'pot_values': [0]*NUM_POTS, 'master_knob': None}
+        self.init_ui()
+        self.load_settings()
+
+    def init_ui(self):
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(30, 30, 30, 30)
+        main_layout.setSpacing(25)
+
+        header = QLabel("VOLUMEMASTER")
+        header.setFont(QFont("Sans Serif", 12, QFont.Bold))
+        header.setAlignment(Qt.AlignCenter)
+        header.setStyleSheet("color: #a6adc8; letter-spacing: 4px; margin-bottom: 10px;")
+        main_layout.addWidget(header)
+
+        m_frame = QFrame()
+        m_frame.setStyleSheet("background: #313244; border-radius: 10px;")
+        m_layout = QHBoxLayout(m_frame)
+        m_label = QLabel("GLOBAL MASTER")
+        m_label.setStyleSheet("color: #bac2de; font-weight: bold; padding-left: 5px;")
+        self.master_combo = QComboBox()
+        self.master_combo.addItem("Disabled", None)
+        for i in range(NUM_POTS): self.master_combo.addItem(f"Knob {i + 1}", i)
+        self.master_combo.currentIndexChanged.connect(self.save_master_config)
+        m_layout.addWidget(m_label)
+        m_layout.addStretch()
+        m_layout.addWidget(self.master_combo)
+        main_layout.addWidget(m_frame)
+
+        grid = QGridLayout()
+        grid.setSpacing(15)
+        self.labels, self.sliders, self.app_labels = [], [], []
+
+        for i in range(NUM_POTS):
+            card = QFrame()
+            card.setStyleSheet("background: #313244; border-radius: 12px; border: none;")
+            cl = QVBoxLayout(card)
+            cl.setContentsMargins(15, 15, 15, 15)
+
+            h = QHBoxLayout()
+            t = QLabel(f"KNOB {i+1}")
+            t.setStyleSheet("color: #9399b2; font-weight: bold;")
+            self.labels.append(QLabel("0%"))
+            self.labels[i].setStyleSheet("color: #89b4fa; font-weight: bold;")
+            h.addWidget(t); h.addStretch(); h.addWidget(self.labels[i])
+            cl.addLayout(h)
+
+            self.sliders.append(QSlider(Qt.Horizontal))
+            self.sliders[i].setRange(0, 100); self.sliders[i].setEnabled(False)
+            cl.addWidget(self.sliders[i])
+
+            self.app_labels.append(QLabel("None assigned"))
+            self.app_labels[i].setStyleSheet("color: #6c7086; font-size: 11px;")
+            self.app_labels[i].setWordWrap(True); self.app_labels[i].setMinimumHeight(35)
+            cl.addWidget(self.app_labels[i])
+
+            btn = QPushButton("ASSIGN")
+            btn.clicked.connect(lambda _, k=i: self.open_app_selector(k))
+            cl.addWidget(btn)
+            grid.addWidget(card, i // 2, i % 2)
+
+        main_layout.addLayout(grid)
+
+        p_card = QFrame()
+        p_card.setStyleSheet("background: #181825; border-radius: 10px;")
+        pl = QHBoxLayout(p_card)
+        for t, s, c in [("SAVE", self.save_profile, "#a6e3a1"), 
+                        ("LOAD", self.load_profile, "#f9e2af"), 
+                        ("DELETE", self.delete_profile, "#f38ba8")]:
+            b = QPushButton(t); b.setStyleSheet(f"color: {c}; font-weight: bold; background: transparent;")
+            b.clicked.connect(s); pl.addWidget(b)
+        main_layout.addStretch(); main_layout.addWidget(p_card)
+
+    def _clean_app_list(self, raw):
+        if not raw: return []
+        if isinstance(raw, str): return [raw]
+        if isinstance(raw, list): return [str(a) for a in raw if a is not None]
+        return []
+
     def load_settings(self):
         for i in range(NUM_POTS):
-            raw = self.settings.value(f"knob/{i}/apps")
-            apps = self._normalize_apps(raw)
-            self.knob_apps[i] = apps
-            self.update_app_label(i)
+            raw = self.settings.value(f"knob/{i}/apps") or self.settings.value(f"knob_{i}_apps")
+            apps = self._clean_app_list(raw)
+            self.state['knob_apps'][i] = apps
+            self.update_ui_labels(i)
+        m = self.settings.value("master_knob")
+        if m not in [None, "None"]: self.master_combo.setCurrentIndex(int(m) + 1)
 
-    def update_app_label(self, i):
-        apps = self.knob_apps[i]
-        self.app_labels[i].setText("Apps: " + (", ".join(apps) if apps else "None"))
+    def update_ui_labels(self, i):
+        apps = self.state['knob_apps'][i]
+        self.app_labels[i].setText(", ".join(apps) if apps else "None assigned")
 
-    def save_master(self, idx):
+    def save_master_config(self, idx):
         data = self.master_combo.itemData(idx)
-        self.master_knob = data
-        self.settings.setValue("master_knob", "None" if data is None else str(data))
+        self.state['master_knob'] = data
+        self.settings.setValue("master_knob", str(data) if data is not None else "None")
+
+    def open_app_selector(self, k):
+        apps = self.pc.get_apps()
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Select Apps")
+        dlg.setFixedSize(400, 500)
+        dl = QVBoxLayout(dlg)
+        ql = QListWidget()
+        for a in apps:
+            item = QListWidgetItem(a)
+            item.setCheckState(Qt.Checked if a in self.state['knob_apps'][k] else Qt.Unchecked)
+            ql.addItem(item)
+        dl.addWidget(ql)
+        btn = QPushButton("CONFIRM SELECTION")
+        btn.clicked.connect(dlg.accept); dl.addWidget(btn)
+        if dlg.exec():
+            selected = [ql.item(i).text() for i in range(ql.count()) if ql.item(i).checkState() == Qt.Checked]
+            self.state['knob_apps'][k] = selected
+            self.settings.setValue(f"knob/{k}/apps", selected)
+            self.update_ui_labels(k)
 
     def save_profile(self):
-        name, ok = QInputDialog.getText(self, "Save Profile", "Profile name:")
-        if not ok or not name.strip():
-            return
-        name = name.strip()
-        for i in range(NUM_POTS):
-            self.settings.setValue(f"profile/{name}/knob/{i}", self.knob_apps[i])
-        self.settings.setValue(f"profile/{name}/master",
-                               "None" if self.master_knob is None else str(self.master_knob))
+        name, ok = QInputDialog.getText(self, "Save", "Enter profile name:")
+        if ok and name.strip():
+            for i in range(NUM_POTS):
+                self.settings.setValue(f"profile/{name}/knob/{i}", self.state['knob_apps'][i])
+            self.settings.setValue(f"profile/{name}/master", self.state['master_knob'])
 
     def load_profile(self):
-        names = sorted({
-            k.split("/")[1] for k in self.settings.allKeys()
-            if k.startswith("profile/") and k.count("/") >= 2
-        })
-        if not names:
-            QMessageBox.information(self, "Profiles", "No saved profiles found.")
+        keys = self.settings.allKeys()
+        profiles = sorted({k.split("/")[1] for k in keys if k.startswith("profile/")})
+        if not profiles:
+            QMessageBox.information(self, "VolumeMaster", "No saved profiles found.")
             return
-        name, ok = QInputDialog.getItem(self, "Load Profile", "Select profile:", names, 0, False)
-        if not ok:
-            return
-        for i in range(NUM_POTS):
-            raw = self.settings.value(f"profile/{name}/knob/{i}")
-            self.knob_apps[i] = self._normalize_apps(raw)
-            self.update_app_label(i)
-        mk = self.settings.value(f"profile/{name}/master")
-        self.master_knob = None if mk == "None" else (int(mk) if mk else None)
-        self.master_combo.setCurrentIndex(0 if self.master_knob is None else self.master_knob + 1)
+        name, ok = QInputDialog.getItem(self, "Load", "Select profile:", profiles, 0, False)
+        if ok:
+            for i in range(NUM_POTS):
+                raw = self.settings.value(f"profile/{name}/knob/{i}", [])
+                self.state['knob_apps'][i] = self._clean_app_list(raw)
+                self.update_ui_labels(i)
+            m = self.settings.value(f"profile/{name}/master")
+            self.master_combo.setCurrentIndex(0 if m in [None, "None"] else int(m) + 1)
 
     def delete_profile(self):
-        names = sorted({
-            k.split("/")[1] for k in self.settings.allKeys()
-            if k.startswith("profile/") and k.count("/") >= 2
-        })
-        if not names:
-            QMessageBox.information(self, "Delete Profile", "No profiles to delete.")
-            return
-        name, ok = QInputDialog.getItem(self, "Delete Profile", "Select profile:", names, 0, False)
-        if not ok:
-            return
-        for key in self.settings.allKeys():
-            if key.startswith(f"profile/{name}/"):
-                self.settings.remove(key)
-        QMessageBox.information(self, "Delete Profile", f"Profile '{name}' deleted.")
-
-    # -----------------------
-    # Runtime
-    # -----------------------
-    def refresh_apps(self):
-        self.available_apps = get_pipewire_clients_grouped()
-
-    def select_apps(self, knob):
-        dlg = AppSelectorDialog(self, self.available_apps, self.knob_apps[knob])
-        if dlg.exec():
-            self.knob_apps[knob] = dlg.selected
-            self.settings.setValue(f"knob/{knob}/apps", dlg.selected)
-            self.update_app_label(knob)
+        keys = self.settings.allKeys()
+        profiles = sorted({k.split("/")[1] for k in keys if k.startswith("profile/")})
+        if not profiles: return
+        name, ok = QInputDialog.getItem(self, "Delete", "Select profile to remove:", profiles, 0, False)
+        if ok:
+            for k in keys:
+                if k.startswith(f"profile/{name}/"): self.settings.remove(k)
 
     def update_pots(self, values):
-        for i, val in enumerate(values):
-            if abs(val - self.last_values[i]) < DEBOUNCE_THRESHOLD:
-                continue
-
-            # Update UI immediately
-            self.last_values[i] = val
-            self.labels[i].setText(f"Knob {i + 1}: {val}%")
-            self.sliders[i].setValue(val)
-
-            volume = pot_to_volume(val)
-
-            # Cancel any pending timer for this knob
-            self.timers[i].stop()
-
-            if self.master_knob is not None and i == self.master_knob:
-                self.pending_volumes[i] = volume
+        self.state['pot_values'] = values
+        for i, v in enumerate(values):
+            self.labels[i].setText(f"{v}%"); self.sliders[i].setValue(v)
+            if i == self.state['master_knob']: self.pc.set_master_vol(v / 100.0)
             else:
-                client_ids = []
-                for app in self.knob_apps[i]:
-                    client_ids.extend(self.available_apps.get(app, []))
-                if client_ids:
-                    self.pending_volumes[i] = (volume, client_ids)
-                else:
-                    self.pending_volumes[i] = None
-                    continue  # nothing to do
+                for app in self.state['knob_apps'][i]: self.pc.set_app_vol_bulk(app, v / 100.0)
 
-            # Schedule new application after delay
-            self.timers[i].start(VOLUME_APPLY_DELAY)
+class SerialWorker(QObject):
+    updated = Signal(list)
+    def run(self):
+        vals = [0] * NUM_POTS
+        while True:
+            try:
+                with serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=0.1) as ser:
+                    while True:
+                        line = ser.readline().decode(errors='ignore').strip()
+                        if "@" in line:
+                            try:
+                                v, k = map(int, line.split("@"))
+                                if 0 < k <= NUM_POTS and abs(v - vals[k-1]) > 1:
+                                    vals[k-1] = v; self.updated.emit(vals.copy())
+                            except: continue
+            except: time.sleep(1)
 
-    def _apply_pending_volume(self, knob):
-        pending = self.pending_volumes[knob]
-        if pending is None:
-            return
-        self.pending_volumes[knob] = None
-
-        if self.master_knob is not None and knob == self.master_knob:
-            set_master_volume(pending)
-        else:
-            volume, client_ids = pending
-            set_volume(client_ids, volume)
-
-# -----------------------
-# Entry point
-# -----------------------
 def main():
     app = QApplication(sys.argv)
-
-    icon_path = os.path.join(os.path.dirname(__file__), "icon.png")
-    if os.path.exists(icon_path):
-        app.setWindowIcon(QIcon(icon_path))
-
     app.setStyleSheet("""
-        QWidget { background:#1e1e2e; color:#cdd6f4; font-family: Sans Serif; }
-        QFrame { background:#313244; border-radius:8px; padding:8px; margin:4px; }
-        QPushButton { background:#45475a; padding:8px; border-radius:6px; }
-        QPushButton:hover { background:#585b70; }
-        QLabel { padding:4px; }
+        QWidget { background: #1e1e2e; color: #cdd6f4; font-family: 'Segoe UI', Sans-Serif; }
+        QPushButton { background: #45475a; border-radius: 6px; padding: 8px; font-weight: bold; border: none; }
+        QPushButton:hover { background: #585b70; }
+        QComboBox { background: #45475a; border: none; border-radius: 4px; padding: 4px 10px; min-width: 120px; }
+        QComboBox::drop-down { border: none; }
+        QComboBox QAbstractItemView { background: #313244; selection-background-color: #585b70; border: 1px solid #45475a; outline: none; padding: 5px; }
+        QSlider::groove:horizontal { background: #181825; height: 4px; border-radius: 2px; }
+        QSlider::handle:horizontal { background: #89b4fa; width: 12px; height: 12px; margin: -4px 0; border-radius: 6px; }
+        QListWidget { background: #313244; border: none; border-radius: 8px; padding: 5px; }
     """)
-
-    win = MainWindow()
-    win.show()
-
-    worker = SerialWorker(SERIAL_PORT, BAUD_RATE, NUM_POTS)
-    thread = threading.Thread(target=worker.run, daemon=True)
-    worker.pot_values.connect(win.update_pots)
-    thread.start()
-
-    rc = app.exec()
-    worker.stop()
-    sys.exit(rc)
+    pc = PulseCore(); win = MainWindow(pc); win.show()
+    s_worker = SerialWorker()
+    threading.Thread(target=s_worker.run, daemon=True).start()
+    s_worker.updated.connect(win.update_pots)
+    m_worker = FastMonitor(win.state)
+    threading.Thread(target=m_worker.run, daemon=True).start()
+    sys.exit(app.exec())
 
 if __name__ == "__main__":
     main()
