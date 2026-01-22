@@ -3,7 +3,7 @@ set -e  # Exit on any error
 
 # App metadata (customize these)
 APP_NAME="VolumeMaster"          # Change to your app name
-APP_VERSION="1.0"          # Optional version
+APP_VERSION="1.02"          # Optional version
 EXEC_NAME="main"           # Name of the PyInstaller executable (from main.py)
 DESKTOP_EXEC="main"        # Exec line in .desktop file
 
@@ -47,5 +47,7 @@ mkdir -p AppDir/usr/bin && cp icon.png AppDir/usr/bin/
   --desktop-file ${APP_NAME}.desktop \
   --output appimage
 
+#Cleanup Build Directories
+rm -rf dist build AppDir linuxdeploy-x86_64.AppImage *.spec venv *.desktop
+
 echo "AppImage created: $(ls *.AppImage)"
-echo "Test it: ./*.AppImage"
