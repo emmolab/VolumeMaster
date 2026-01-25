@@ -42,10 +42,11 @@ Alternatively  you can use the [source code](https://github.com/Wilsondotzip/Har
 - A headless software varient
 - Full Windows support
 - VoiceMeeter integration, control voicemeeter tracks
+- Linux support. Thanks to emmolab 
+
 ## What’s to come...
 This project is still in active development, so here are some of the features we plan to add in the future.
 
-- Linux support. Its getting there... (We will need to remake the backend script from the ground up for this.)
 - More cases! I mean more! All of the cases, every case. Front controls top controls you name it!
 - Not yet sure how to do this one but somewhere down the line we would like to add control over hardware devices like microphones and speakers.
 - Buttons for possible functions like muting and config switching. 
