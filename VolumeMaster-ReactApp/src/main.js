@@ -433,6 +433,11 @@ app.whenReady().then(() => {
   createWindow();
   createTray();
   startBackendWithRetry()
+  if (process.argv.includes('--hidden')) {
+      mainWindow.hide();
+    }
+
+  
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
