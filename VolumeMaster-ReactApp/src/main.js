@@ -7,11 +7,12 @@ const yaml = require('yaml');
 const crypto = require('crypto');
 const sharp = require('sharp');
 const { execSync } = require('child_process');
-const { exec } = require('child_process');
 const extractIcon = require('extract-file-icon');
 const psList = require('ps-list').default;
 const kill = require('tree-kill');
 const path = require('path');
+const util = require('util');
+const exec = util.promisify(require('child_process').exec);
 
 let mainWindow;
 let tray;
@@ -80,35 +81,27 @@ function saveConfig(data) {
 }
 
 // --- EXE Resolution ---
-function findRunningProcessExePath(exeName) {
+async function findRunningProcessExePath(exeName) {
   try {
     const baseName = path.basename(exeName, '.exe');
-    const cmd = `powershell -Command "Get-Process -Name '${baseName}' | Select-Object -ExpandProperty Path"`;
-    const output = execSync(cmd, { encoding: 'utf8' }).split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-    return output[0] || null;
-  } catch {
+    const cmd = `powershell -NoProfile -Command "Get-Process -Name '${baseName}' | Select-Object -ExpandProperty Path"`;
+
+    const { stdout } = await exec(cmd, { encoding: 'utf8' });
+    const output = stdout.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+
+    if (output[0]) {
+      exePathCache.set(exeName, output[0]);
+      return output[0];
+    }
+    return null;
+  } catch (err) {
+    console.error("findRunningProcessExePath failed:", err.message);
     return null;
   }
 }
 
-function findExePath(exeName) {
-  if (exePathCache.has(exeName)) return exePathCache.get(exeName);
 
-  const config = loadConfig();
- 
 
-  try {
-    const output = execSync(`where ${exeName}`, { encoding: 'utf8' })
-      .split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-    if (output.length > 0) {
-      exePathCache.set(exeName, output[0]);
-      return output[0];
-    }
-  } catch {}
-
-  exePathCache.set(exeName, null);
-  return null;
-}
 
 // --- Icon Handling ---
 async function saveIconToCache(programName, buffer) {
@@ -139,12 +132,16 @@ async function getAppIcon(exeName) {
   const programName = exeName.toLowerCase();
 
   // Cache check
+  
   const cached = loadIconFromCache(programName);
   if (cached) return cached;
 
   // Path resolution
-  let exePath = findRunningProcessExePath(exeName) || findExePath(exeName);
-  if (!exePath) return null;
+  let exePath = await findRunningProcessExePath(exeName);
+  if (!exePath) {
+    console.log('No running process found for', exeName);
+    return null;
+  }
 
   exePath = normalizePath(exePath).replace(/\//g, '\\');
   if (!fs.existsSync(exePath)) return null;
@@ -382,6 +379,25 @@ function createWindow() {
   */
 }
 
+// Auto-start Handling
+ipcMain.handle('get-auto-start', () => {
+  return app.getLoginItemSettings({
+    path: app.getPath('exe'),
+    args: ['--hidden']
+  }).openAtLogin;
+});
+
+ipcMain.handle('set-auto-start', (event, enabled) => {
+  app.setLoginItemSettings({
+    openAtLogin: enabled,
+    path: app.getPath('exe'),
+    args: ['--hidden']
+  });
+   console.log('[AutoStart] set:', app.getPath('exe'), enabled);
+
+  return true;
+});
+
 function createTray() {
   const trayIcon = nativeImage.createFromPath(iconPathNormal);
   
@@ -430,7 +446,6 @@ app.on('window-all-closed', () => {
 try {
 	require('electron-reloader')(module);
 } catch {}
-
 
 
 function killBackendByName(name = 'VolumeMaster-Headless.exe') {

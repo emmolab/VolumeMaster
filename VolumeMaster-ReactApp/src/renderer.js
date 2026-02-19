@@ -126,9 +126,8 @@ function createKnobSection(knobId) {
 
   section.appendChild(createKnobHeader(knobId));
   
-  // NEW: Add Master Volume button to each knob section
+  // Add Master Volume button to each knob section
   section.appendChild(createMasterVolumeButton(knobId));
-
   const apps = config.Mappings[knobId]?.ProcessNames || [];
   
   if (apps.length === 0) {
@@ -148,7 +147,7 @@ function createKnobSection(knobId) {
   return section;
 }
 
-// NEW: Create Master Volume button
+// Create Master Volume button
 function createMasterVolumeButton(knobId) {
   const button = document.createElement('button');
   const apps = config.Mappings[knobId]?.ProcessNames || [];
@@ -169,7 +168,7 @@ function createMasterVolumeButton(knobId) {
   return button;
 }
 
-// NEW: Create Master Volume indicator card
+// Create Master Volume indicator card
 function createMasterVolumeCard(knobId) {
   const card = document.createElement('div');
   card.className = "flex items-center gap-4 mb-3 p-3 rounded border border-indigo-400 bg-indigo-900 bg-opacity-30 cursor-pointer transition overflow-hidden";
@@ -195,7 +194,12 @@ function createMasterVolumeCard(knobId) {
   return card;
 }
 
-// NEW: Add Master Volume function
+
+
+
+
+
+// Add Master Volume function
 async function addMasterVolume(knobId) {
   try {
     // Ensure mapping structure exists
@@ -733,9 +737,37 @@ document.addEventListener('drop', (e) => {
   }
 });
 
+//AutoStart
+async function loadAutoStartState() {
+  const autoStartCheckbox = document.getElementById('autoStartCheckbox');
+  if (!autoStartCheckbox) return;
+
+  try {
+    const enabled = await window.api.getAutoStart();
+    autoStartCheckbox.checked = enabled;
+  } catch (err) {
+    console.error('AutoStart load failed:', err);
+  }
+}
+
+function setupAutoStartListener() {
+  const autoStartCheckbox = document.getElementById('autoStartCheckbox');
+  if (!autoStartCheckbox) return;
+
+  autoStartCheckbox.addEventListener('change', async () => {
+    try {
+      await window.api.setAutoStart(autoStartCheckbox.checked);
+    } catch (err) {
+      console.error('AutoStart update failed:', err);
+    }
+  });
+}
 
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
   setupTabs();
   refreshComPortListPreservingSelection();
+  setupAutoStartListener();
+  loadAutoStartState();
+  
 });
