@@ -432,7 +432,7 @@ app.whenReady().then(() => {
   
   createWindow();
   createTray();
-
+  startBackendWithRetry()
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
