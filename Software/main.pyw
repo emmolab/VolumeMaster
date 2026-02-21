@@ -3,11 +3,13 @@ import os
 import yaml
 import serial
 import atexit
-from pycaw.pycaw import AudioUtilities, ISimpleAudioVolume, IAudioEndpointVolume
+from pycaw.pycaw import AudioUtilities, ISimpleAudioVolume, IAudioEndpointVolume, AudioSession
+from pycaw.constants import EDataFlow, ERole
 from comtypes import CLSCTX_ALL
 import serial.tools.list_ports
 import time
 from collections import deque
+from ctypes import POINTER, cast
 
 
 def find_arduino_port():
@@ -88,12 +90,10 @@ for key, val in config.get('Mappings', {}).items():
 
     entry = {}
 
-    # Handle ProcessNames (list)
     apps = val.get('ProcessNames')
     if isinstance(apps, list):
         entry['apps'] = [a.strip() for a in apps if isinstance(a, str) and a.strip()]
 
-    # Handle VoiceMeeter (can be None or list)
     vm = val.get('VoiceMeeter')
     if vm:
         if isinstance(vm, list):
@@ -101,7 +101,12 @@ for key, val in config.get('Mappings', {}).items():
         elif isinstance(vm, str):
             entry['vm'] = [vm.strip()]
 
+    mics = val.get('MicNames')
+    if isinstance(mics, list):
+        entry['mics'] = [m.strip() for m in mics if isinstance(m, str) and m.strip()]
+
     mappings[index] = entry
+
 # Button mapping
 buttons = {
     key: val.split(';') for key, val in config.get('Buttons', {}).items() if val
@@ -110,9 +115,43 @@ buttons = {
 volumes = {k: 0 for k in mappings}
 session_cache = {}
 master_volume_interface = None
+mic_interfaces = {}  # device name substring (lowercase) -> IAudioEndpointVolume
+
+
+def setup_mic_interfaces():
+    """Scan all active capture (recording) devices and cache their volume interfaces by name."""
+    global mic_interfaces
+    mic_interfaces.clear()
+
+    wanted = set()
+    for entry in mappings.values():
+        for name in entry.get('mics', []):
+            wanted.add(name.lower())
+
+    if not wanted:
+        return
+
+    # Use data_flow=EDataFlow.eCapture.value to enumerate only capture devices directly,
+    # avoiding the need to filter by .flow afterward.
+    capture_devices = AudioUtilities.GetAllDevices(
+        data_flow=EDataFlow.eCapture.value, device_state=1  # DEVICE_STATE_ACTIVE = 1
+    )
+
+    for device in capture_devices:
+        try:
+            friendly_name = device.FriendlyName.lower() if device.FriendlyName else ''
+            for w in wanted:
+                if w in friendly_name:
+                    # Use the new .EndpointVolume property instead of manual Activate + cast
+                    mic_interfaces[w] = device.EndpointVolume
+                    break
+        except Exception as e:
+            print(f"Could not open mic device '{device.FriendlyName}': {e}")
+
 
 def setup_audio_interfaces():
     global session_cache, master_volume_interface
+
     sessions = AudioUtilities.GetAllSessions()
     session_cache.clear()
 
@@ -120,14 +159,17 @@ def setup_audio_interfaces():
         if session.Process:
             pid = session.Process.pid
             exe_name = session.Process.name()
-            # Store by PID so multiple sessions from same exe are preserved
-            session_cache[(pid, exe_name)] = session._ctl.QueryInterface(ISimpleAudioVolume)
+            # Use the .SimpleAudioVolume property on AudioSession instead of
+            # the old ._ctl.QueryInterface(ISimpleAudioVolume) pattern.
+            session_cache[(pid, exe_name)] = session.SimpleAudioVolume
 
     # Preload master volume interface if any mapping uses it
     if any('master' in entry.get('apps', []) for entry in mappings.values()):
-        devices = AudioUtilities.GetSpeakers()
-        interface = devices.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
-        master_volume_interface = interface.QueryInterface(IAudioEndpointVolume)
+        # GetSpeakers() now returns an AudioDevice with .EndpointVolume directly
+        device = AudioUtilities.GetSpeakers()
+        master_volume_interface = device.EndpointVolume
+
+    setup_mic_interfaces()
 
 
 def process_audio_change(index, value):
@@ -136,20 +178,30 @@ def process_audio_change(index, value):
 
     if 'apps' in mapping:
         for name in mapping['apps']:
-            # Master volume
             if name.lower() == 'master' and master_volume_interface:
                 master_volume_interface.SetMasterVolumeLevelScalar(volume_scalar, None)
                 continue
 
             target_str = name.lower()
-            for (pid, exe_name), session in list(session_cache.items()):
+            for (pid, exe_name), vol_interface in list(session_cache.items()):
                 if target_str in exe_name.lower():
                     try:
-                        session.SetMasterVolume(volume_scalar, None)
+                        vol_interface.SetMasterVolume(volume_scalar, None)
                     except Exception:
-                        pass  # Session disappeared mid-loop
+                        pass
 
-    # Voicemeeter targets
+    if 'mics' in mapping:
+        for mic_name in mapping['mics']:
+            key = mic_name.lower()
+            interface = mic_interfaces.get(key)
+            if interface:
+                try:
+                    interface.SetMasterVolumeLevelScalar(volume_scalar, None)
+                except Exception as e:
+                    print(f"Failed to set mic volume for '{mic_name}': {e}")
+            else:
+                print(f"Mic not found in cache: '{mic_name}' — will retry on next refresh")
+
     if config.get('vm') and 'vm' in mapping:
         for target in mapping['vm']:
             if target.lower().startswith('input'):
@@ -158,15 +210,12 @@ def process_audio_change(index, value):
                 set_output_gain(target.strip('Output'), value)
 
 
-
 def main():
-    
-    
-    volumes = {}                # Last applied values per channel
-    volume_cache = deque()      # Queue of (index, value) tuples to process in order
+    volumes = {}
+    volume_cache = deque()
     last_update_time = 0
     timeSinceLastRefresh = time.time()
-    update_interval = 0.00001     # 30 ms between sending volume changes
+    update_interval = 0.00001
     timeSinceLastSerialInput = None
 
     setup_audio_interfaces()
@@ -175,23 +224,22 @@ def main():
         now = time.monotonic()
         if volume_cache:
             if serial_conn.timeout != 0:
-                serial_conn.timeout = 0  # Non-blocking
+                serial_conn.timeout = 0
         else:
             if serial_conn.timeout is not None:
-                serial_conn.timeout = None  # Blocking
-        # Read serial input
+                serial_conn.timeout = None
+
         try:
             line = serial_conn.readline().decode().strip()
         except:
             sys.exit("Serial disconnect error.")
-
 
         if '@' in line:
             try:
                 value_str, index_str = line.split('@')
                 value, index = int(value_str), int(index_str)
                 timeSinceLastSerialInput = time.time()
-                volume_cache.append((index, value))  # Add to queue, do NOT overwrite
+                volume_cache.append((index, value))
             except ValueError:
                 print("Malformed input:", line)
                 continue
@@ -202,25 +250,19 @@ def main():
             else:
                 set_button_toggle(line.strip('='), True)
 
-        # Every update_interval seconds, send all volume changes if any cached
         if now - last_update_time >= update_interval and volume_cache:
             while volume_cache:
                 if not volume_cache:
                     break
-                index, val = volume_cache.popleft()  # Get oldest update
-
-                # Optional: Skip if this value is same as last applied
+                index, val = volume_cache.popleft()
                 if index not in volumes or volumes[index] != val:
                     volumes[index] = val
                     process_audio_change(index, val)
-
                 last_update_time = now
-        
 
-        # Refresh interfaces every 2 seconds 
-        if  time.time() - timeSinceLastRefresh > 2:            
+        if time.time() - timeSinceLastRefresh > 2:
             timeSinceLastRefresh = time.time()
             setup_audio_interfaces()
-            
+
 if __name__ == "__main__":
     main()
