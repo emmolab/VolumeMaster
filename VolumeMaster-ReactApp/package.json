@@ -1,7 +1,7 @@
 {
   "name": "volume-master",
-  "version": "1.0.4-beta",
-  "description": "A simple Electron app to manage VoiceMaster configurations",
+  "version": "1.1.0",
+  "description": "VolumeMaster configuration software",
   "main": "src/main.js",
   "author": "William Spalding",
   "license": "ISC",
