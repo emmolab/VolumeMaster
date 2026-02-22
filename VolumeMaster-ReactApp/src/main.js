@@ -13,6 +13,7 @@ const kill = require('tree-kill');
 const path = require('path');
 const util = require('util');
 const exec = util.promisify(require('child_process').exec);
+const portAudio = require('naudiodon');
 
 let mainWindow;
 let tray;
@@ -473,6 +474,21 @@ function killBackendByName(name = 'VolumeMaster-Headless.exe') {
     });
   });
 }
+
+ipcMain.handle('list-input-devices', async () => {
+  const portAudio = require('naudiodon');
+  const devices = portAudio.getDevices();
+
+  const cleanDevices = devices
+    .filter(d =>
+      d.maxInputChannels > 0 &&
+      d.hostAPIName === 'Windows WASAPI'
+    )
+    .map(d => d.name);
+
+  return [...new Set(cleanDevices)]; // remove duplicates
+});
+
 
 
 

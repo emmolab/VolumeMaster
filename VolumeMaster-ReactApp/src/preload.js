@@ -18,7 +18,9 @@ contextBridge.exposeInMainWorld('api', {
   getVMVersion: () => ipcRenderer.invoke('get-vm-version'),
 
   getAutoStart: () => ipcRenderer.invoke('get-auto-start'),
-  setAutoStart: (enabled) => ipcRenderer.invoke('set-auto-start', enabled)
+  setAutoStart: (enabled) => ipcRenderer.invoke('set-auto-start', enabled),
+  
+  getInputDevices: () => ipcRenderer.invoke('list-input-devices')
   
 });
 

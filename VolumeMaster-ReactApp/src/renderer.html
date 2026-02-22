@@ -73,16 +73,29 @@
       id="tabContentMappings"
       class="grow flex flex-col max-h-full flex-auto basis-auto min-h-0"
     >
+      <h2 class="text-gray-200 text-sm font-semibold mt-2 mb-1">
+        Applications
+      </h2>
+
       <input
         id="processSearch"
         type="text"
         placeholder="Search running apps..."
         class="w-full p-1.5 text-sm border border-slate-700 rounded bg-slate-800 text-gray-300 placeholder-slate-500 focus:outline-indigo-400 focus:ring-1 focus:ring-indigo-400"
       />
+
       <div
         id="processList"
         class="flex flex-wrap gap-1 mt-2 overflow-y-auto overflow-x-hidden shrink min-h-0 mb-4 flex-initial overflow-y-auto"
       ></div>
+      <h2 class="text-gray-200 text-sm font-semibold mt-2 mb-1">
+        Input Devices
+      </h2>
+      <div
+        id="inputDeviceList"
+        class="flex flex-wrap gap-1 mt-2 overflow-y-auto overflow-x-hidden shrink min-h-0 mb-4 flex-initial overflow-y-auto"
+      ></div>
+
       <div
         id="knobsAppsContainer"
         class="flex flex-wrap gap-4 overflow-y-auto pb-2 mb-4 justify-center items-start min-h-[250px]"

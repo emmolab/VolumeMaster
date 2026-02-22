@@ -2,6 +2,8 @@
 
 let config = { Mappings: {}, exePaths: {} };
 let runningProcesses = [];
+let inputDevices = [];
+
 let iconCache = new Map();
 
 // --- Entry Point ---
@@ -27,12 +29,20 @@ window.api.loadConfig().then(data => {
 });
 
 loadProcessList();
+loadInputDevices();
 
 // --- Data Loading ---
 async function loadProcessList() {
   runningProcesses = await window.api.listProcesses();
   renderProcessSearch();
 }
+
+async function loadInputDevices() {
+  inputDevices = await window.api.getInputDevices();
+  renderInputDeviceList();
+}
+
+
 
 document.getElementById('processSearch')?.addEventListener('focus', async () => {
   await loadProcessList();
@@ -531,6 +541,42 @@ function renderProcessSearch() {
         list.appendChild(item);
       });
   }
+}
+
+function renderInputDeviceList() {
+  const list = document.getElementById('inputDeviceList');
+  if (!list) return;
+
+  while (list.firstChild) list.removeChild(list.firstChild);
+
+  if (!inputDevices || !inputDevices.length) return;
+
+  inputDevices.forEach((name, index) => {
+    const item = document.createElement('div');
+
+    item.textContent = name;
+    item.id = `input-device-${index}`; // use index instead of id
+    item.className =
+      'px-2 py-1 bg-slate-700 text-indigo-200 rounded cursor-move hover:bg-indigo-600 transition whitespace-nowrap capitalize max-h-8';
+
+    item.setAttribute('draggable', 'true');
+
+    const dragStartHandler = (e) => {
+      console.log("Dragging input device:", name);
+
+      e.dataTransfer.clearData();
+
+      e.dataTransfer.setData('text/plain', name); // just the name for now
+      e.dataTransfer.effectAllowed = 'copy';
+
+      item.style.opacity = '0.5';
+      setTimeout(() => item.style.opacity = '1', 100);
+    };
+
+    item.addEventListener('dragstart', dragStartHandler);
+
+    list.appendChild(item);
+  });
 }
 
 // --- COM Port Settings ---
