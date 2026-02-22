@@ -186,23 +186,28 @@ ipcMain.handle('list-processes', async () => {
       `powershell -NoProfile -Command "Get-Process | Select-Object ProcessName, MainWindowTitle"`,
       { encoding: 'utf8' }
     );
-    const seen = new Set();
-    const processes = stdout
+
+    const seen = new Map();
+
+    stdout
       .split(/\r?\n/)
       .map(l => l.trim())
       .filter(Boolean)
       .slice(2)
-      .reduce((acc, line) => {
+      .forEach(line => {
         const parts = line.split(/\s{2,}/);
         const name = parts[0];
         const windowTitle = parts[1] || '';
         const exeName = name.endsWith('.exe') ? name : `${name}.exe`;
-        if (seen.has(exeName)) return acc;
-        seen.add(exeName);
-        acc.push({ name: exeName, isGUI: windowTitle !== '' });
-        return acc;
-      }, []);
-    return processes;
+
+        const existing = seen.get(exeName);
+        // If not seen yet, or this entry has a title and the existing one doesn't
+        if (!existing || (!existing.isGUI && windowTitle !== '')) {
+          seen.set(exeName, { name: exeName, isGUI: windowTitle !== '' });
+        }
+      });
+
+    return [...seen.values()];
   } catch (err) {
     console.error('Failed to list processes:', err);
     return [];
