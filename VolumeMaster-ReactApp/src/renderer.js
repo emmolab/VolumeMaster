@@ -330,7 +330,6 @@ async function handleDrop(event, knobId) {
   event.stopPropagation();
   console.log(`[handleDrop] Dropping on knob ${knobId}`);
 
-  // Safety check
   if (!knobId) {
     console.warn('[handleDrop] knobId is undefined or invalid');
     return;
@@ -351,39 +350,41 @@ async function handleDrop(event, knobId) {
   }
 
   try {
-    // Ensure mapping structure exists
     if (!config.Mappings[knobId]) {
-      config.Mappings[knobId] = { ProcessNames: [] };
+      config.Mappings[knobId] = { ProcessNames: [], MicNames: [] };
     }
 
     const mapping = config.Mappings[knobId];
+    const isInputDevice = inputDevices.includes(droppedApp);
 
-    if (!Array.isArray(mapping.ProcessNames)) {
-      mapping.ProcessNames = [];
-    }
-
-    // Avoid duplicate
-    if (mapping.ProcessNames.includes(droppedApp)) {
-      console.warn(`[handleDrop] "${droppedApp}" already mapped to knob ${knobId}`);
-      return;
-    }
-
-    // Don't allow dropping 'master' - use the button instead
     if (droppedApp === 'master') {
       console.warn(`[handleDrop] Cannot drop 'master' - use Add Master Volume button`);
       return;
     }
 
-    // Update config
-    mapping.ProcessNames.push(droppedApp);
-    console.log(`[handleDrop] Updated config:`, mapping.ProcessNames);
+    if (isInputDevice) {
+      if (!Array.isArray(mapping.MicNames)) mapping.MicNames = [];
+      if (mapping.MicNames.includes(droppedApp)) {
+        console.warn(`[handleDrop] "${droppedApp}" already mapped to knob ${knobId}`);
+        return;
+      }
+      mapping.MicNames.push(droppedApp);
+    } else {
+      if (!Array.isArray(mapping.ProcessNames)) mapping.ProcessNames = [];
+      if (mapping.ProcessNames.includes(droppedApp)) {
+        console.warn(`[handleDrop] "${droppedApp}" already mapped to knob ${knobId}`);
+        return;
+      }
+      mapping.ProcessNames.push(droppedApp);
+    }
+
+    console.log(`[handleDrop] Updated config:`, mapping);
   } catch (err) {
     console.error('[handleDrop] Error updating config:', err);
     return;
   }
 
   try {
-    // Update UI
     const knobSection = document.getElementById(`knob-section-${knobId}`);
     if (!knobSection) {
       console.warn(`[handleDrop] No section found for knob ${knobId}`);
@@ -402,8 +403,6 @@ async function handleDrop(event, knobId) {
       console.log('[handleDrop] Removed empty message');
     }
 
-    // Append new app card
-    // Append new app card
     const isInputDevice = inputDevices.includes(droppedApp);
     const card = isInputDevice
       ? createInputDeviceCard(droppedApp, knobId)
@@ -415,12 +414,10 @@ async function handleDrop(event, knobId) {
     return;
   }
 
-  // Save config async
   window.api.saveConfig(config).catch(err => {
     console.error('[handleDrop] Failed to save config:', err);
   });
 }
-
 // --- Helpers ---
 async function getAppIconForApp(app) {
   if (!app) return 'assets/icons/default.png';
@@ -436,14 +433,17 @@ async function getAppIconForApp(app) {
 }
 
 async function removeAppFromKnob(knobId, appName) {
-  const mapping = config.Mappings[knobId];
-  if (!mapping || !Array.isArray(mapping.ProcessNames)) return;
+   const mapping = config.Mappings[knobId];
+  if (!mapping) return;
 
-  const idx = mapping.ProcessNames.indexOf(appName);
+  const isInputDevice = inputDevices.includes(appName);
+  const list = isInputDevice ? mapping.MicNames : mapping.ProcessNames;
+
+  if (!Array.isArray(list)) return;
+  const idx = list.indexOf(appName);
   if (idx === -1) return;
 
-  // Remove from config and persist
-  mapping.ProcessNames.splice(idx, 1);
+  list.splice(idx, 1);
   await window.api.saveConfig(config);
 
   try {

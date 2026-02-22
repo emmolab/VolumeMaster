@@ -55,23 +55,20 @@ function normalizePath(p) {
 
 // --- Config Functions ---
 function loadConfig() {
-  
   if (!configCache) {
     try {
       const file = fs.readFileSync(CONFIG_PATH, 'utf8');
       configCache = yaml.parse(file);
     } catch {
-      const file = fs.readFileSync(DEFAULT_CONFIG_PATH, 'utf8')
+      const file = fs.readFileSync(DEFAULT_CONFIG_PATH, 'utf8');
       configCache = yaml.parse(file);
     }
+
+    let dirty = false;
+    if (configCache.vm === undefined) { configCache.vm = false; dirty = true; }
+    if (configCache.vmversion === undefined) { configCache.vmversion = 'banana'; dirty = true; }
+    if (dirty) saveConfig(configCache);
   }
-  if(configCache.vm === undefined) {
-    configCache.vm = false; // Default to false if not set
-  }
-  if(configCache.vmversion === undefined) {
-    configCache.vmversion = 'banana'; // Default to 'banana' if not set
-  }
-  saveConfig(configCache); // Ensure config is saved with defaults
   return configCache;
 }
 
@@ -167,8 +164,21 @@ async function getAppIcon(exeName) {
 
 // --- IPC Handlers ---
 ipcMain.handle('load-config', () => loadConfig());
-ipcMain.handle('save-config', (_, data) => saveConfig(data));
+ipcMain.handle('save-config', (_, data) => {
+  const existing = loadConfig();
+  const cleaned = {
+    comport: data.comport ?? existing.comport,
+    baudrate: data.baudrate ?? existing.baudrate,
+    bytesize: data.bytesize ?? existing.bytesize,
+    parity: data.parity ?? existing.parity,
+    stopbits: data.stopbits ?? existing.stopbits,
+    vm: existing.vm,
+    vmversion: existing.vmversion,
+    Mappings: data.Mappings ?? existing.Mappings,
 
+  };
+  saveConfig(cleaned);
+});
 ipcMain.handle('open-exe-dialog', async () => {
   const result = await dialog.showOpenDialog({
     title: 'Select Executable',
