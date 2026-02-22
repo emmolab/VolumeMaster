@@ -532,29 +532,30 @@ function renderInputDeviceList() {
   if (!inputDevices || !inputDevices.length) return;
 
   inputDevices.forEach((name, index) => {
-    const item = document.createElement('div');
-    item.id = `input-device-${index}`;
-    item.className =
-      'px-2 py-1 bg-slate-700 text-indigo-200 rounded cursor-move hover:bg-indigo-600 transition whitespace-nowrap capitalize max-h-8 flex items-center gap-2';
-    item.setAttribute('draggable', 'true');
+    const card = document.createElement('div');
+    card.id = `input-device-${index}`;
+    card.className = 'flex items-center gap-3 px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg cursor-move hover:bg-indigo-600 hover:border-indigo-500 transition group';
+    card.setAttribute('draggable', 'true');
 
-    const icon = document.createElement('span');
+    const icon = document.createElement('div');
+    icon.className = 'w-8 h-8 rounded-md bg-slate-600 group-hover:bg-indigo-500 flex items-center justify-center text-lg shrink-0 transition';
     icon.textContent = '🎤';
 
-    const label = document.createElement('span');
+    const label = document.createElement('div');
+    label.className = 'text-sm text-indigo-200 group-hover:text-white truncate transition';
     label.textContent = name;
 
-    item.append(icon, label);
+    card.append(icon, label);
 
-    item.addEventListener('dragstart', (e) => {
+    card.addEventListener('dragstart', (e) => {
       e.dataTransfer.clearData();
       e.dataTransfer.setData('text/plain', name);
       e.dataTransfer.effectAllowed = 'copy';
-      item.style.opacity = '0.5';
-      setTimeout(() => item.style.opacity = '1', 100);
+      card.style.opacity = '0.5';
+      setTimeout(() => card.style.opacity = '1', 100);
     });
 
-    list.appendChild(item);
+    list.appendChild(card);
   });
 }
 
@@ -673,6 +674,31 @@ function setupTabs() {
 
   // Initialize to first tab active
   buttons.tabMappings.click();
+}
+
+function setupSubTabs() {
+  const panels = {
+    subTabApps: document.getElementById('subContentApps'),
+    subTabDevices: document.getElementById('subContentDevices'),
+  };
+
+  const buttons = {
+    subTabApps: document.getElementById('subTabApps'),
+    subTabDevices: document.getElementById('subTabDevices'),
+  };
+
+  Object.entries(buttons).forEach(([id, btn]) => {
+    btn.addEventListener('click', () => {
+      Object.entries(panels).forEach(([panelId, content]) => {
+        const isActive = panelId === id;
+        content.classList.toggle('hidden', !isActive);
+        buttons[panelId].classList.toggle('border-b-2', isActive);
+        buttons[panelId].classList.toggle('border-indigo-400', isActive);
+        buttons[panelId].classList.toggle('text-indigo-400', isActive);
+        buttons[panelId].classList.toggle('text-slate-500', !isActive);
+      });
+    });
+  });
 }
 
 document.getElementById('saveAndRunBtn')?.addEventListener('click', async () => {
@@ -813,6 +839,7 @@ function setupAutoStartListener() {
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
   setupTabs();
+  setupSubTabs()
   refreshComPortListPreservingSelection();
   setupAutoStartListener();
   loadAutoStartState();

@@ -21,9 +21,11 @@
     --color-indigo-900: oklch(35.9% 0.144 278.697);
     --color-slate-400: oklch(70.4% 0.04 256.788);
     --color-slate-500: oklch(55.4% 0.046 257.417);
+    --color-slate-600: oklch(44.6% 0.043 257.281);
     --color-slate-700: oklch(37.2% 0.044 257.287);
     --color-slate-800: oklch(27.9% 0.041 260.031);
     --color-slate-900: oklch(20.8% 0.042 265.755);
+    --color-gray-200: oklch(92.8% 0.006 264.531);
     --color-gray-300: oklch(87.2% 0.01 258.338);
     --color-gray-400: oklch(70.7% 0.022 261.325);
     --color-white: #fff;
@@ -301,6 +303,9 @@
   .max-w-sm {
     max-width: var(--container-sm);
   }
+  .flex-1 {
+    flex: 1;
+  }
   .flex-auto {
     flex: auto;
   }
@@ -347,6 +352,9 @@
   }
   .gap-1 {
     gap: calc(var(--spacing) * 1);
+  }
+  .gap-2 {
+    gap: calc(var(--spacing) * 2);
   }
   .gap-3 {
     gap: calc(var(--spacing) * 3);
@@ -432,6 +440,9 @@
   }
   .bg-red-500 {
     background-color: var(--color-red-500);
+  }
+  .bg-slate-600 {
+    background-color: var(--color-slate-600);
   }
   .bg-slate-700 {
     background-color: var(--color-slate-700);
@@ -519,6 +530,9 @@
   }
   .whitespace-nowrap {
     white-space: nowrap;
+  }
+  .text-gray-200 {
+    color: var(--color-gray-200);
   }
   .text-gray-300 {
     color: var(--color-gray-300);
