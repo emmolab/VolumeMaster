@@ -1,4 +1,3 @@
-// Updated renderer.js with Master Volume button feature
 
 let config = { Mappings: {}, exePaths: {} };
 let runningProcesses = [];
@@ -7,16 +6,14 @@ let inputDevices = [];
 let iconCache = new Map();
 
 // --- Entry Point ---
-window.api.loadConfig().then(data => {
+window.api.loadConfig().then(async (data) => {
   config = data || { Mappings: {}};
+  
+  await Promise.all([loadProcessList(), loadInputDevices()]);
   renderAllKnobsAndApps();
 
   window.api.getVMEnabled().then(enabled => {
-    if(enabled) {
-      document.getElementById('vmEnableButton').textContent = "Enabled";
-    } else {
-      document.getElementById('vmEnableButton').textContent = "Disabled";
-    }
+    document.getElementById('vmEnableButton').textContent = enabled ? "Enabled" : "Disabled";
   });
 
   window.api.getVMVersion().then(version => {
@@ -25,11 +22,8 @@ window.api.loadConfig().then(data => {
       vmVersionSelect.value = version || 'banana';
     }
   });
-
 });
 
-loadProcessList();
-loadInputDevices();
 
 // --- Data Loading ---
 async function loadProcessList() {
@@ -146,9 +140,10 @@ function createKnobSection(knobId) {
     apps.forEach(app => {
       if (app === 'master') {
         // Show master volume card for 'master' entry
-        section.appendChild(createMasterVolumeCard(knobId));
+        section.appendChild(createVolumeCard(knobId, "🔊", "Master Volume"));
+      } else if (inputDevices.includes(app)) {
+        section.appendChild(createInputDeviceCard(app, knobId));
       } else {
-        // Show regular app card
         section.appendChild(createAppCard(app, knobId));
       }
     });
@@ -179,24 +174,24 @@ function createMasterVolumeButton(knobId) {
 }
 
 // Create Master Volume indicator card
-function createMasterVolumeCard(knobId) {
+function createVolumeCard(knobId, iconText, labelTest) {
   const card = document.createElement('div');
   card.className = "flex items-center gap-4 mb-3 p-3 rounded border border-indigo-400 bg-indigo-900 bg-opacity-30 cursor-pointer transition overflow-hidden";
   card.setAttribute('data-appname', 'master'); // Use data-appname like regular apps
   
   const icon = document.createElement('div');
   icon.className = "w-10 h-10 rounded bg-indigo-500 flex items-center justify-center text-white font-bold text-lg";
-  icon.textContent = "🔊";
+  icon.textContent = iconText;
   
   const label = document.createElement('div');
-  label.textContent = "Master Volume";
+  label.textContent = labelTest;
   label.className = "text-lg font-medium text-indigo-300";
 
   card.append(icon, label);
 
   // Remove master volume on click (same as regular apps)
   card.onclick = async () => {
-    console.log(`[createMasterVolumeCard] Removing master volume from knob ${knobId}`);
+    console.log(`[createVolumeCard] Removing master volume from knob ${knobId}`);
     await removeAppFromKnob(knobId, 'master');
     card.remove();
   };
@@ -254,7 +249,7 @@ async function addMasterVolume(knobId) {
     }
 
     // Add master volume card
-    const masterVolumeCard = createMasterVolumeCard(knobId);
+    const masterVolumeCard = createVolumeCard(knobId, "🔊", "Master Volume");
     const button_element = knobSection.querySelector('button');
     button_element.parentNode.insertBefore(masterVolumeCard, button_element.nextSibling);
 
@@ -408,7 +403,12 @@ async function handleDrop(event, knobId) {
     }
 
     // Append new app card
-    knobSection.appendChild(createAppCard(droppedApp, knobId));
+    // Append new app card
+    const isInputDevice = inputDevices.includes(droppedApp);
+    const card = isInputDevice
+      ? createInputDeviceCard(droppedApp, knobId)
+      : createAppCard(droppedApp, knobId);
+    knobSection.appendChild(card);
     console.log('[handleDrop] App card created and added');
   } catch (err) {
     console.error('[handleDrop] Error updating UI:', err);
@@ -480,64 +480,46 @@ async function removeAppFromKnob(knobId, appName) {
 // --- Process Search ---
 // Global reference to current search input to prevent duplicate listeners
 let currentSearchInput = null;
-
 function renderProcessSearch() {
-  const searchInput = document.getElementById('processSearch');  
+  const searchInput = document.getElementById('processSearch');
+  const filterSelect = document.getElementById('processFilter');
   const list = document.getElementById('processList');
-  if (!searchInput || !list) return;
-
-  // Only replace if it's different to prevent infinite loops
-  if (currentSearchInput !== searchInput) {
-    // Remove old listener if exists
-    if (currentSearchInput) {
-      currentSearchInput.oninput = null;
-    }
-    
-    currentSearchInput = searchInput;
-    searchInput.oninput = () => updateList(searchInput.value.toLowerCase());
+  if (!searchInput || !list || !filterSelect) return;
+  function applyFilters() {
+    const searchValue = searchInput.value.toLowerCase();
+    const filterValue = filterSelect.value;
+    updateList(searchValue, filterValue);
   }
-  
-  updateList('');
-
-  function updateList(filter) {
-    // Clear existing items
+  applyProcessFilters = applyFilters; // expose globally
+  searchInput.oninput = applyFilters;
+  filterSelect.onchange = applyFilters;
+  applyFilters();
+  function updateList(searchFilter, typeFilter) {
     while (list.firstChild) list.removeChild(list.firstChild);
-
     runningProcesses
-      .filter(name => name && name.toLowerCase().includes(filter))
-      .forEach(name => {
+      .filter(proc => {
+        if (!proc || !proc.name) return false;
+        const matchesSearch =
+          proc.name.toLowerCase().includes(searchFilter);
+        const matchesType =
+          typeFilter === 'all' ||
+          (typeFilter === 'gui' && proc.isGUI);
+        return matchesSearch && matchesType;
+      })
+      .forEach(proc => {
         const item = document.createElement('div');
-        item.textContent = sanitizeAppName(name);
-        item.id = `process-item-${name}`;
-        item.className = 'px-2 py-1 bg-slate-700 text-indigo-200 rounded cursor-move hover:bg-indigo-600 transition whitespace-nowrap capitalize max-h-8';
-
+        item.textContent = sanitizeAppName(proc.name);
+        item.id = `process-item-${proc.name}`;
+        item.className =
+          'px-2 py-1 bg-slate-700 text-indigo-200 rounded cursor-move hover:bg-indigo-600 transition whitespace-nowrap capitalize max-h-8';
         item.setAttribute('draggable', 'true');
-
-        // Use proper event handler function
-        const dragStartHandler = (e) => {
-          console.log("Dragging:", name);
-          
-          if (!name) {
-            e.preventDefault();
-            return;
-          }
-          
-          // Clear any existing data first
+        item.addEventListener('dragstart', (e) => {
           e.dataTransfer.clearData();
-          e.dataTransfer.setData('text/plain', name);
+          e.dataTransfer.setData('text/plain', proc.name);
           e.dataTransfer.effectAllowed = 'copy';
-          
-          // Add visual feedback
           item.style.opacity = '0.5';
-          
-          // Reset opacity after drag
-          setTimeout(() => {
-            item.style.opacity = '1';
-          }, 100);
-        };
-
-        item.addEventListener('dragstart', dragStartHandler);
-
+          setTimeout(() => (item.style.opacity = '1'), 100);
+        });
         list.appendChild(item);
       });
   }
@@ -546,39 +528,58 @@ function renderProcessSearch() {
 function renderInputDeviceList() {
   const list = document.getElementById('inputDeviceList');
   if (!list) return;
-
   while (list.firstChild) list.removeChild(list.firstChild);
-
   if (!inputDevices || !inputDevices.length) return;
 
   inputDevices.forEach((name, index) => {
     const item = document.createElement('div');
-
-    item.textContent = name;
-    item.id = `input-device-${index}`; // use index instead of id
+    item.id = `input-device-${index}`;
     item.className =
-      'px-2 py-1 bg-slate-700 text-indigo-200 rounded cursor-move hover:bg-indigo-600 transition whitespace-nowrap capitalize max-h-8';
-
+      'px-2 py-1 bg-slate-700 text-indigo-200 rounded cursor-move hover:bg-indigo-600 transition whitespace-nowrap capitalize max-h-8 flex items-center gap-2';
     item.setAttribute('draggable', 'true');
 
-    const dragStartHandler = (e) => {
-      console.log("Dragging input device:", name);
+    const icon = document.createElement('span');
+    icon.textContent = '🎤';
 
+    const label = document.createElement('span');
+    label.textContent = name;
+
+    item.append(icon, label);
+
+    item.addEventListener('dragstart', (e) => {
       e.dataTransfer.clearData();
-
-      e.dataTransfer.setData('text/plain', name); // just the name for now
+      e.dataTransfer.setData('text/plain', name);
       e.dataTransfer.effectAllowed = 'copy';
-
       item.style.opacity = '0.5';
       setTimeout(() => item.style.opacity = '1', 100);
-    };
-
-    item.addEventListener('dragstart', dragStartHandler);
+    });
 
     list.appendChild(item);
   });
 }
 
+function createInputDeviceCard(name, knobId) {
+  const card = document.createElement('div');
+  card.className = "flex items-center gap-4 mb-3 p-3 rounded border border-gray-300 hover:bg-red-100 cursor-pointer transition overflow-hidden";
+  card.setAttribute('data-appname', name);
+
+  const icon = document.createElement('div');
+  icon.className = "w-10 h-10 rounded bg-slate-600 flex items-center justify-center text-xl";
+  icon.textContent = '🎤';
+
+  const label = document.createElement('div');
+  label.textContent = name;
+  label.className = "text-lg font-medium shrink capitalize text-wrap";
+
+  card.append(icon, label);
+
+  card.onclick = async () => {
+    await removeAppFromKnob(knobId, name);
+    card.remove();
+  };
+
+  return card;
+}
 // --- COM Port Settings ---
 async function refreshComPortListPreservingSelection() {
   const select = document.getElementById('comPortSelect');

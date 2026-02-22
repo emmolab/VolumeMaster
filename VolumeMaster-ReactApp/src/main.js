@@ -182,20 +182,32 @@ ipcMain.handle('get-app-icon', async (_, exeName) => getAppIcon(exeName));
 
 ipcMain.handle('list-processes', async () => {
   try {
-    const processes = await psList();
-    const exeNames = new Set();
-    for (const p of processes) {
-      if (p.name.toLowerCase().endsWith('.exe')) {
-        exeNames.add(p.name);
-      }
-    }
-    return Array.from(exeNames).sort((a, b) => a.localeCompare(b));
+    const { stdout } = await exec(
+      `powershell -NoProfile -Command "Get-Process | Select-Object ProcessName, MainWindowTitle"`,
+      { encoding: 'utf8' }
+    );
+    const seen = new Set();
+    const processes = stdout
+      .split(/\r?\n/)
+      .map(l => l.trim())
+      .filter(Boolean)
+      .slice(2)
+      .reduce((acc, line) => {
+        const parts = line.split(/\s{2,}/);
+        const name = parts[0];
+        const windowTitle = parts[1] || '';
+        const exeName = name.endsWith('.exe') ? name : `${name}.exe`;
+        if (seen.has(exeName)) return acc;
+        seen.add(exeName);
+        acc.push({ name: exeName, isGUI: windowTitle !== '' });
+        return acc;
+      }, []);
+    return processes;
   } catch (err) {
     console.error('Failed to list processes:', err);
     return [];
   }
 });
-
 // Serial Port Handling
 
 ipcMain.handle('list-serial-ports', async () => {
@@ -488,7 +500,6 @@ ipcMain.handle('list-input-devices', async () => {
 
   return [...new Set(cleanDevices)]; // remove duplicates
 });
-
 
 
 
