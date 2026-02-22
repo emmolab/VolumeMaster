@@ -734,9 +734,9 @@ document.getElementById('vmVersionSelect')?.addEventListener('change', async (e)
 
 window.api.onBackendStatus(({ type, message }) => {
   if (type == 'success') {
-    document.getElementById('saveAndRunBtn').textContent = "Click to stop";
+    document.getElementById('saveAndRunBtn').textContent = "Stop";
   } else if (type == 'warning') {
-    document.getElementById('saveAndRunBtn').textContent = "Save and Run";
+    document.getElementById('saveAndRunBtn').textContent = "Run";
   }
   showAlert(type, message);
 });
