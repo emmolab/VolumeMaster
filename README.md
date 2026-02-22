@@ -5,7 +5,7 @@ Recently rebranded to VolumeMaster not all docs are up to date.
 
 ## Check out the Wiki For build guides and FAQ!
 
-![1nonsquare](https://github.com/Wilsondotzip/HAMixer/assets/58171274/fa879564-af6d-4e54-b166-ebcadf9d83df)
+
 
 # Contents:
 ### [Getting Started](#getting-started)
@@ -31,24 +31,31 @@ Alternatively  you can use the [source code](https://github.com/Wilsondotzip/Har
 
 
 # Features
-
-- Map an application's volume to a specific control knob
-- Application grouping, to have multiple applications controlled by one knob
-- Full Windows GUI, for easy setup and application mapping!
-- When minimized, software which runs quietly in the background as a tray icon
+Hardware
+- 4 Knobs which interface via serial over USB
+- 3D printable cases
+  
+Headless Software
+- Map an application's volume to any control knob
+- Map input devices volume to any control knob
+- Map a VoiceMeeter control to any knob
+- Application grouping, to have multiple things controlled by one knob
 - Easy to use config files
-- Auto reconnect
-- System notifications when things go wrong
-- A headless software varient
-- Full Windows support
-- VoiceMeeter integration, control voicemeeter tracks
+  
+Windows React App
+- Easy to use UI with drag and drop mapping
+- Search running apps and input devices
+- Manage settings
+- In-app Notifications for when things go wrong
+- Windows Autostart 
+- When minimized, software which runs quietly in the background as a tray icon
+  
 - Linux support. Thanks to emmolab 
 
 ## What’s to come...
 This project is still in active development, so here are some of the features we plan to add in the future.
 
 - More cases! I mean more! All of the cases, every case. Front controls top controls you name it!
-- Not yet sure how to do this one but somewhere down the line we would like to add control over hardware devices like microphones and speakers.
 - Buttons for possible functions like muting and config switching. 
 
 
