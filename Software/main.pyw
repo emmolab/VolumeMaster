@@ -19,6 +19,8 @@ class ConfigHandler(FileSystemEventHandler):
         self._last_triggered = 0
 
     def on_modified(self, event):
+        if not event.src_path:
+            return
         if event.src_path.endswith('config.yaml'):
             now = time.time()
             if now - self._last_triggered < 0.5:
