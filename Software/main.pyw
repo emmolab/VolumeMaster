@@ -10,13 +10,35 @@ import serial.tools.list_ports
 import time
 from collections import deque
 from ctypes import POINTER, cast
+from watchdog.observers import Observer
+from watchdog.events import FileSystemEventHandler
 
+class ConfigHandler(FileSystemEventHandler):
+    def __init__(self, on_change):
+        self.on_change = on_change
+        self._last_triggered = 0
+
+    def on_modified(self, event):
+        if event.src_path.endswith('config.yaml'):
+            now = time.time()
+            if now - self._last_triggered < 0.5:
+                return
+            self._last_triggered = now
+            print('[Watcher] Config changed, reloading...')
+            self.on_change()
 
 def find_arduino_port():
     for port in serial.tools.list_ports.comports():
         if 'arduino' in port.description.lower():
             return port.device
     return ''
+
+def watch_config(config_path, on_change):
+    handler = ConfigHandler(on_change)
+    observer = Observer()
+    observer.schedule(handler, path=os.path.dirname(config_path), recursive=False)
+    observer.start()
+    return observer
 
 def load_config():
     with open('config.yaml', 'r', encoding='UTF-8') as file:
@@ -67,10 +89,45 @@ def setup_voicemeeter(config):
 
     return set_input_gain, set_output_gain, set_button_toggle
 
+def build_mappings(config):
+    mappings = {}
+    for key, val in config.get('Mappings', {}).items():
+        try:
+            index = int(key)
+        except ValueError:
+            print(f"Invalid mapping key: {key}")
+            continue
+
+        entry = {}
+
+        apps = val.get('ProcessNames')
+        if isinstance(apps, list):
+            entry['apps'] = [a.strip() for a in apps if isinstance(a, str) and a.strip()]
+
+        vm = val.get('VoiceMeeter')
+        if vm:
+            if isinstance(vm, list):
+                entry['vm'] = [v.strip() for v in vm if isinstance(v, str) and v.strip()]
+            elif isinstance(vm, str):
+                entry['vm'] = [vm.strip()]
+
+        mics = val.get('MicNames')
+        if isinstance(mics, list):
+            entry['mics'] = [m.strip() for m in mics if isinstance(m, str) and m.strip()]
+
+        mappings[index] = entry
+    return mappings
+
 # Load config and initialize
 config = load_config()
 default_com = find_arduino_port()
 serial_conn = setup_serial(config, default_com)
+
+mappings = build_mappings(config)
+buttons = {
+    key: val.split(';') for key, val in config.get('Buttons', {}).items() if val
+}
+volumes = {k: 0 for k in mappings}
 
 # Setup Voicemeeter if enabled
 set_input_gain = set_output_gain = set_button_toggle = None
@@ -79,47 +136,12 @@ if config.get('vm'):
 
 atexit.register(lambda: vmr.logout() if veme else None)
 
-# Map setup
-mappings = {}
-for key, val in config.get('Mappings', {}).items():
-    try:
-        index = int(key)
-    except ValueError:
-        print(f"Invalid mapping key: {key}")
-        continue
-
-    entry = {}
-
-    apps = val.get('ProcessNames')
-    if isinstance(apps, list):
-        entry['apps'] = [a.strip() for a in apps if isinstance(a, str) and a.strip()]
-
-    vm = val.get('VoiceMeeter')
-    if vm:
-        if isinstance(vm, list):
-            entry['vm'] = [v.strip() for v in vm if isinstance(v, str) and v.strip()]
-        elif isinstance(vm, str):
-            entry['vm'] = [vm.strip()]
-
-    mics = val.get('MicNames')
-    if isinstance(mics, list):
-        entry['mics'] = [m.strip() for m in mics if isinstance(m, str) and m.strip()]
-
-    mappings[index] = entry
-
-# Button mapping
-buttons = {
-    key: val.split(';') for key, val in config.get('Buttons', {}).items() if val
-}
-
-volumes = {k: 0 for k in mappings}
 session_cache = {}
 master_volume_interface = None
-mic_interfaces = {}  # device name substring (lowercase) -> IAudioEndpointVolume
+mic_interfaces = {}
 
 
 def setup_mic_interfaces():
-    """Scan all active capture (recording) devices and cache their volume interfaces by name."""
     global mic_interfaces
     mic_interfaces.clear()
 
@@ -131,10 +153,8 @@ def setup_mic_interfaces():
     if not wanted:
         return
 
-    # Use data_flow=EDataFlow.eCapture.value to enumerate only capture devices directly,
-    # avoiding the need to filter by .flow afterward.
     capture_devices = AudioUtilities.GetAllDevices(
-        data_flow=EDataFlow.eCapture.value, device_state=1  # DEVICE_STATE_ACTIVE = 1
+        data_flow=EDataFlow.eCapture.value, device_state=1
     )
 
     for device in capture_devices:
@@ -142,7 +162,6 @@ def setup_mic_interfaces():
             friendly_name = device.FriendlyName.lower() if device.FriendlyName else ''
             for w in wanted:
                 if w in friendly_name:
-                    # Use the new .EndpointVolume property instead of manual Activate + cast
                     mic_interfaces[w] = device.EndpointVolume
                     break
         except Exception as e:
@@ -159,17 +178,35 @@ def setup_audio_interfaces():
         if session.Process:
             pid = session.Process.pid
             exe_name = session.Process.name()
-            # Use the .SimpleAudioVolume property on AudioSession instead of
-            # the old ._ctl.QueryInterface(ISimpleAudioVolume) pattern.
             session_cache[(pid, exe_name)] = session.SimpleAudioVolume
 
-    # Preload master volume interface if any mapping uses it
     if any('master' in entry.get('apps', []) for entry in mappings.values()):
-        # GetSpeakers() now returns an AudioDevice with .EndpointVolume directly
         device = AudioUtilities.GetSpeakers()
         master_volume_interface = device.EndpointVolume
 
     setup_mic_interfaces()
+
+
+def reload_config():
+    global config, mappings, buttons, volumes
+    print('[Watcher] Reloading config...')
+    try:
+        config = {}
+        mappings = {}
+        buttons = {}
+        volumes = {}
+
+        config = load_config()
+        mappings = build_mappings(config)
+        buttons = {
+            key: val.split(';') for key, val in config.get('Buttons', {}).items() if val
+        }
+        volumes = {k: 0 for k in mappings}
+
+        setup_audio_interfaces()
+        print('[Watcher] Reloaded successfully.')
+    except Exception as e:
+        print(f'[Watcher] Failed to reload: {e}')
 
 
 def process_audio_change(index, value):
@@ -220,49 +257,57 @@ def main():
 
     setup_audio_interfaces()
 
-    while True:
-        now = time.monotonic()
-        if volume_cache:
-            if serial_conn.timeout != 0:
-                serial_conn.timeout = 0
-        else:
-            if serial_conn.timeout is not None:
-                serial_conn.timeout = None
+    observer = watch_config(os.path.abspath('config.yaml'), reload_config)
 
-        try:
-            line = serial_conn.readline().decode().strip()
-        except:
-            sys.exit("Serial disconnect error.")
-
-        if '@' in line:
-            try:
-                value_str, index_str = line.split('@')
-                value, index = int(value_str), int(index_str)
-                timeSinceLastSerialInput = time.time()
-                volume_cache.append((index, value))
-            except ValueError:
-                print("Malformed input:", line)
-                continue
-
-        elif veme:
-            if line.endswith('!='):
-                set_button_toggle(line.strip('!='), False)
+    try:
+        while True:
+            now = time.monotonic()
+            if volume_cache:
+                if serial_conn.timeout != 0:
+                    serial_conn.timeout = 0
             else:
-                set_button_toggle(line.strip('='), True)
+                if serial_conn.timeout is not None:
+                    serial_conn.timeout = None
 
-        if now - last_update_time >= update_interval and volume_cache:
-            while volume_cache:
-                if not volume_cache:
-                    break
-                index, val = volume_cache.popleft()
-                if index not in volumes or volumes[index] != val:
-                    volumes[index] = val
-                    process_audio_change(index, val)
-                last_update_time = now
+            try:
+                line = serial_conn.readline().decode().strip()
+            except:
+                sys.exit("Serial disconnect error.")
 
-        if time.time() - timeSinceLastRefresh > 2:
-            timeSinceLastRefresh = time.time()
-            setup_audio_interfaces()
+            if '@' in line:
+                try:
+                    value_str, index_str = line.split('@')
+                    value, index = int(value_str), int(index_str)
+                    timeSinceLastSerialInput = time.time()
+                    volume_cache.append((index, value))
+                except ValueError:
+                    print("Malformed input:", line)
+                    continue
+
+            elif veme:
+                if line.endswith('!='):
+                    set_button_toggle(line.strip('!='), False)
+                else:
+                    set_button_toggle(line.strip('='), True)
+
+            if now - last_update_time >= update_interval and volume_cache:
+                while volume_cache:
+                    if not volume_cache:
+                        break
+                    index, val = volume_cache.popleft()
+                    if index not in volumes or volumes[index] != val:
+                        volumes[index] = val
+                        process_audio_change(index, val)
+                    last_update_time = now
+
+            if time.time() - timeSinceLastRefresh > 2:
+                timeSinceLastRefresh = time.time()
+                setup_audio_interfaces()
+
+    finally:
+        observer.stop()
+        observer.join()
+
 
 if __name__ == "__main__":
     main()
