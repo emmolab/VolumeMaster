@@ -35,72 +35,73 @@ class PulseCore:
                     name = si.proplist.get('application.name') or si.proplist.get('media.name')
                     if name == app_name:
                         self.pulse.volume_set_all_chans(si, vol_float)
-            except: pass
+            except Exception:
+                pass
 
     def set_master_vol(self, vol_float):
         with self._lock:
             try:
                 sink = self.pulse.get_sink_by_name(self.pulse.server_info().default_sink_name)
                 self.pulse.volume_set_all_chans(sink, vol_float)
-            except: pass
+            except Exception:
+                pass
 
     def get_apps(self):
         with self._lock:
             try:
-                return sorted({si.proplist.get('application.name') or si.proplist.get('media.name') 
-                               for si in self.pulse.sink_input_list() if si.proplist.get('application.name')})
-            except: return []
+                return sorted({
+                    si.proplist.get('application.name') or si.proplist.get('media.name')
+                    for si in self.pulse.sink_input_list()
+                    if si.proplist.get('application.name') or si.proplist.get('media.name')
+                })
+            except Exception:
+                return []
+
 
 class FastMonitor(QObject):
+    """Listens for PulseAudio sink-input events and clamps volume on new streams."""
+
     def __init__(self, state):
         super().__init__()
         self.state = state
-        self.lazy_queue = queue.Queue()
-        threading.Thread(target=self._lazy_worker, daemon=True).start()
+        self._queue = queue.Queue()
+        threading.Thread(target=self._worker, daemon=True).start()
 
     def run(self):
         try:
             with pulsectl.Pulse('VolumeMaster-Monitor') as pulse:
                 pulse.event_mask_set('sink_input')
-                pulse.event_callback_set(self._on_event)
+                pulse.event_callback_set(lambda ev: self._queue.put(ev.index))
                 while True:
                     pulse.event_listen()
-        except: pass
+        except Exception:
+            pass
 
-    def _on_event(self, ev):
-        threading.Thread(target=self._instant_clamp, args=(ev.index,), daemon=True).start()
-
-    def _instant_clamp(self, index):
-        try:
-            with pulsectl.Pulse('VolumeMaster-Instant') as p:
+    def _clamp(self, p, index):
+        """Try to clamp a stream's volume, retrying briefly if name isn't available yet."""
+        for delay in [0, 0.02, 0.05, 0.1]:
+            if delay:
+                time.sleep(delay)
+            try:
                 si = p.sink_input_info(index)
                 name = si.proplist.get('application.name') or si.proplist.get('media.name')
-                if not name:
-                    self.lazy_queue.put(index)
+                if name:
+                    for k_idx, apps in enumerate(self.state['knob_apps']):
+                        if name in apps:
+                            target = self.state['pot_values'][k_idx] / 100.0
+                            if abs(si.volume.value_flat - target) > 0.01:
+                                p.volume_set_all_chans(si, target)
                     return
-                for k_idx, apps in enumerate(self.state['knob_apps']):
-                    if name in apps:
-                        target = self.state['pot_values'][k_idx] / 100.0
-                        if abs(si.volume.value_flat - target) > 0.01:
-                            p.volume_set_all_chans(si, target)
-        except: pass
+            except Exception:
+                return
 
-    def _lazy_worker(self):
-        with pulsectl.Pulse('VolumeMaster-Lazy') as p:
+    def _worker(self):
+        with pulsectl.Pulse('VolumeMaster-Worker') as p:
             while True:
-                index = self.lazy_queue.get()
-                for delay in [0.02, 0.05, 0.1]:
-                    time.sleep(delay)
-                    try:
-                        si = p.sink_input_info(index)
-                        name = si.proplist.get('application.name') or si.proplist.get('media.name')
-                        if name:
-                            for k_idx, apps in enumerate(self.state['knob_apps']):
-                                if name in apps:
-                                    p.volume_set_all_chans(si, self.state['pot_values'][k_idx] / 100.0)
-                            break
-                    except: break
-                self.lazy_queue.task_done()
+                index = self._queue.get()
+                self._clamp(p, index)
+                self._queue.task_done()
+
 
 class MainWindow(QWidget):
     def __init__(self, pc):
@@ -109,11 +110,11 @@ class MainWindow(QWidget):
         self.settings = QSettings("VolumeMaster", "VolumeMaster")
         self.setWindowTitle("VolumeMaster")
         self.setMinimumSize(580, 720)
-        
+
         icon_path = os.path.join(os.path.dirname(__file__), "icon.png")
         if os.path.exists(icon_path):
             self.setWindowIcon(QIcon(icon_path))
-        
+
         self.state = {'knob_apps': [[] for _ in range(NUM_POTS)], 'pot_values': [0]*NUM_POTS, 'master_knob': None}
         self.init_ui()
         self.load_settings()
@@ -180,8 +181,8 @@ class MainWindow(QWidget):
         p_card = QFrame()
         p_card.setStyleSheet("background: #181825; border-radius: 10px;")
         pl = QHBoxLayout(p_card)
-        for t, s, c in [("SAVE", self.save_profile, "#a6e3a1"), 
-                        ("LOAD", self.load_profile, "#f9e2af"), 
+        for t, s, c in [("SAVE", self.save_profile, "#a6e3a1"),
+                        ("LOAD", self.load_profile, "#f9e2af"),
                         ("DELETE", self.delete_profile, "#f38ba8")]:
             b = QPushButton(t); b.setStyleSheet(f"color: {c}; font-weight: bold; background: transparent;")
             b.clicked.connect(s); pl.addWidget(b)
@@ -212,7 +213,11 @@ class MainWindow(QWidget):
         self.settings.setValue("master_knob", str(data) if data is not None else "None")
 
     def open_app_selector(self, k):
-        apps = self.pc.get_apps()
+        running_apps = self.pc.get_apps()
+        assigned_apps = self.state['knob_apps'][k]
+        # Show all running apps plus any previously assigned apps that aren't currently running
+        apps = sorted(set(running_apps) | set(assigned_apps))
+
         dlg = QDialog(self)
         dlg.setWindowTitle("Select Apps")
         dlg.setFixedSize(400, 500)
@@ -220,7 +225,7 @@ class MainWindow(QWidget):
         ql = QListWidget()
         for a in apps:
             item = QListWidgetItem(a)
-            item.setCheckState(Qt.Checked if a in self.state['knob_apps'][k] else Qt.Unchecked)
+            item.setCheckState(Qt.Checked if a in assigned_apps else Qt.Unchecked)
             ql.addItem(item)
         dl.addWidget(ql)
         btn = QPushButton("CONFIRM SELECTION")
@@ -233,10 +238,14 @@ class MainWindow(QWidget):
 
     def save_profile(self):
         name, ok = QInputDialog.getText(self, "Save", "Enter profile name:")
-        if ok and name.strip():
-            for i in range(NUM_POTS):
-                self.settings.setValue(f"profile/{name}/knob/{i}", self.state['knob_apps'][i])
-            self.settings.setValue(f"profile/{name}/master", self.state['master_knob'])
+        if not ok: return
+        name = name.strip()
+        if not name or "/" in name:
+            QMessageBox.warning(self, "VolumeMaster", "Invalid profile name.")
+            return
+        for i in range(NUM_POTS):
+            self.settings.setValue(f"profile/{name}/knob/{i}", self.state['knob_apps'][i])
+        self.settings.setValue(f"profile/{name}/master", self.state['master_knob'])
 
     def load_profile(self):
         keys = self.settings.allKeys()
@@ -259,8 +268,8 @@ class MainWindow(QWidget):
         if not profiles: return
         name, ok = QInputDialog.getItem(self, "Delete", "Select profile to remove:", profiles, 0, False)
         if ok:
-            for k in keys:
-                if k.startswith(f"profile/{name}/"): self.settings.remove(k)
+            for k in [k for k in keys if k.startswith(f"profile/{name}/")]:
+                self.settings.remove(k)
 
     def update_pots(self, values):
         self.state['pot_values'] = values
@@ -269,6 +278,7 @@ class MainWindow(QWidget):
             if i == self.state['master_knob']: self.pc.set_master_vol(v / 100.0)
             else:
                 for app in self.state['knob_apps'][i]: self.pc.set_app_vol_bulk(app, v / 100.0)
+
 
 class SerialWorker(QObject):
     updated = Signal(list)
@@ -284,8 +294,11 @@ class SerialWorker(QObject):
                                 v, k = map(int, line.split("@"))
                                 if 0 < k <= NUM_POTS and abs(v - vals[k-1]) > 1:
                                     vals[k-1] = v; self.updated.emit(vals.copy())
-                            except: continue
-            except: time.sleep(1)
+                            except Exception:
+                                continue
+            except Exception:
+                time.sleep(1)
+
 
 def main():
     app = QApplication(sys.argv)
