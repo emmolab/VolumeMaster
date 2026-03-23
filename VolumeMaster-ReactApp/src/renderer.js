@@ -1,20 +1,19 @@
-// Updated renderer.js with Master Volume button feature
 
 let config = { Mappings: {}, exePaths: {} };
 let runningProcesses = [];
+let inputDevices = [];
+
 let iconCache = new Map();
 
 // --- Entry Point ---
-window.api.loadConfig().then(data => {
+window.api.loadConfig().then(async (data) => {
   config = data || { Mappings: {}};
+  
+  await Promise.all([loadProcessList(), loadInputDevices()]);
   renderAllKnobsAndApps();
 
   window.api.getVMEnabled().then(enabled => {
-    if(enabled) {
-      document.getElementById('vmEnableButton').textContent = "Enabled";
-    } else {
-      document.getElementById('vmEnableButton').textContent = "Disabled";
-    }
+    document.getElementById('vmEnableButton').textContent = enabled ? "Enabled" : "Disabled";
   });
 
   window.api.getVMVersion().then(version => {
@@ -23,16 +22,21 @@ window.api.loadConfig().then(data => {
       vmVersionSelect.value = version || 'banana';
     }
   });
-
 });
 
-loadProcessList();
 
 // --- Data Loading ---
 async function loadProcessList() {
   runningProcesses = await window.api.listProcesses();
   renderProcessSearch();
 }
+
+async function loadInputDevices() {
+  inputDevices = await window.api.getInputDevices();
+  renderInputDeviceList();
+}
+
+
 
 document.getElementById('processSearch')?.addEventListener('focus', async () => {
   await loadProcessList();
@@ -126,9 +130,8 @@ function createKnobSection(knobId) {
 
   section.appendChild(createKnobHeader(knobId));
   
-  // NEW: Add Master Volume button to each knob section
+  // Add Master Volume button to each knob section
   section.appendChild(createMasterVolumeButton(knobId));
-
   const apps = config.Mappings[knobId]?.ProcessNames || [];
   
   if (apps.length === 0) {
@@ -137,9 +140,10 @@ function createKnobSection(knobId) {
     apps.forEach(app => {
       if (app === 'master') {
         // Show master volume card for 'master' entry
-        section.appendChild(createMasterVolumeCard(knobId));
+        section.appendChild(createVolumeCard(knobId, "🔊", "Master Volume"));
+      } else if (inputDevices.includes(app)) {
+        section.appendChild(createInputDeviceCard(app, knobId));
       } else {
-        // Show regular app card
         section.appendChild(createAppCard(app, knobId));
       }
     });
@@ -148,7 +152,7 @@ function createKnobSection(knobId) {
   return section;
 }
 
-// NEW: Create Master Volume button
+// Create Master Volume button
 function createMasterVolumeButton(knobId) {
   const button = document.createElement('button');
   const apps = config.Mappings[knobId]?.ProcessNames || [];
@@ -169,25 +173,25 @@ function createMasterVolumeButton(knobId) {
   return button;
 }
 
-// NEW: Create Master Volume indicator card
-function createMasterVolumeCard(knobId) {
+// Create Master Volume indicator card
+function createVolumeCard(knobId, iconText, labelTest) {
   const card = document.createElement('div');
   card.className = "flex items-center gap-4 mb-3 p-3 rounded border border-indigo-400 bg-indigo-900 bg-opacity-30 cursor-pointer transition overflow-hidden";
   card.setAttribute('data-appname', 'master'); // Use data-appname like regular apps
   
   const icon = document.createElement('div');
   icon.className = "w-10 h-10 rounded bg-indigo-500 flex items-center justify-center text-white font-bold text-lg";
-  icon.textContent = "🔊";
+  icon.textContent = iconText;
   
   const label = document.createElement('div');
-  label.textContent = "Master Volume";
+  label.textContent = labelTest;
   label.className = "text-lg font-medium text-indigo-300";
 
   card.append(icon, label);
 
   // Remove master volume on click (same as regular apps)
   card.onclick = async () => {
-    console.log(`[createMasterVolumeCard] Removing master volume from knob ${knobId}`);
+    console.log(`[createVolumeCard] Removing master volume from knob ${knobId}`);
     await removeAppFromKnob(knobId, 'master');
     card.remove();
   };
@@ -195,7 +199,12 @@ function createMasterVolumeCard(knobId) {
   return card;
 }
 
-// NEW: Add Master Volume function
+
+
+
+
+
+// Add Master Volume function
 async function addMasterVolume(knobId) {
   try {
     // Ensure mapping structure exists
@@ -240,7 +249,7 @@ async function addMasterVolume(knobId) {
     }
 
     // Add master volume card
-    const masterVolumeCard = createMasterVolumeCard(knobId);
+    const masterVolumeCard = createVolumeCard(knobId, "🔊", "Master Volume");
     const button_element = knobSection.querySelector('button');
     button_element.parentNode.insertBefore(masterVolumeCard, button_element.nextSibling);
 
@@ -321,7 +330,6 @@ async function handleDrop(event, knobId) {
   event.stopPropagation();
   console.log(`[handleDrop] Dropping on knob ${knobId}`);
 
-  // Safety check
   if (!knobId) {
     console.warn('[handleDrop] knobId is undefined or invalid');
     return;
@@ -342,39 +350,41 @@ async function handleDrop(event, knobId) {
   }
 
   try {
-    // Ensure mapping structure exists
     if (!config.Mappings[knobId]) {
-      config.Mappings[knobId] = { ProcessNames: [] };
+      config.Mappings[knobId] = { ProcessNames: [], MicNames: [] };
     }
 
     const mapping = config.Mappings[knobId];
+    const isInputDevice = inputDevices.includes(droppedApp);
 
-    if (!Array.isArray(mapping.ProcessNames)) {
-      mapping.ProcessNames = [];
-    }
-
-    // Avoid duplicate
-    if (mapping.ProcessNames.includes(droppedApp)) {
-      console.warn(`[handleDrop] "${droppedApp}" already mapped to knob ${knobId}`);
-      return;
-    }
-
-    // Don't allow dropping 'master' - use the button instead
     if (droppedApp === 'master') {
       console.warn(`[handleDrop] Cannot drop 'master' - use Add Master Volume button`);
       return;
     }
 
-    // Update config
-    mapping.ProcessNames.push(droppedApp);
-    console.log(`[handleDrop] Updated config:`, mapping.ProcessNames);
+    if (isInputDevice) {
+      if (!Array.isArray(mapping.MicNames)) mapping.MicNames = [];
+      if (mapping.MicNames.includes(droppedApp)) {
+        console.warn(`[handleDrop] "${droppedApp}" already mapped to knob ${knobId}`);
+        return;
+      }
+      mapping.MicNames.push(droppedApp);
+    } else {
+      if (!Array.isArray(mapping.ProcessNames)) mapping.ProcessNames = [];
+      if (mapping.ProcessNames.includes(droppedApp)) {
+        console.warn(`[handleDrop] "${droppedApp}" already mapped to knob ${knobId}`);
+        return;
+      }
+      mapping.ProcessNames.push(droppedApp);
+    }
+
+    console.log(`[handleDrop] Updated config:`, mapping);
   } catch (err) {
     console.error('[handleDrop] Error updating config:', err);
     return;
   }
 
   try {
-    // Update UI
     const knobSection = document.getElementById(`knob-section-${knobId}`);
     if (!knobSection) {
       console.warn(`[handleDrop] No section found for knob ${knobId}`);
@@ -393,20 +403,21 @@ async function handleDrop(event, knobId) {
       console.log('[handleDrop] Removed empty message');
     }
 
-    // Append new app card
-    knobSection.appendChild(createAppCard(droppedApp, knobId));
+    const isInputDevice = inputDevices.includes(droppedApp);
+    const card = isInputDevice
+      ? createInputDeviceCard(droppedApp, knobId)
+      : createAppCard(droppedApp, knobId);
+    knobSection.appendChild(card);
     console.log('[handleDrop] App card created and added');
   } catch (err) {
     console.error('[handleDrop] Error updating UI:', err);
     return;
   }
 
-  // Save config async
   window.api.saveConfig(config).catch(err => {
     console.error('[handleDrop] Failed to save config:', err);
   });
 }
-
 // --- Helpers ---
 async function getAppIconForApp(app) {
   if (!app) return 'assets/icons/default.png';
@@ -422,14 +433,17 @@ async function getAppIconForApp(app) {
 }
 
 async function removeAppFromKnob(knobId, appName) {
-  const mapping = config.Mappings[knobId];
-  if (!mapping || !Array.isArray(mapping.ProcessNames)) return;
+   const mapping = config.Mappings[knobId];
+  if (!mapping) return;
 
-  const idx = mapping.ProcessNames.indexOf(appName);
+  const isInputDevice = inputDevices.includes(appName);
+  const list = isInputDevice ? mapping.MicNames : mapping.ProcessNames;
+
+  if (!Array.isArray(list)) return;
+  const idx = list.indexOf(appName);
   if (idx === -1) return;
 
-  // Remove from config and persist
-  mapping.ProcessNames.splice(idx, 1);
+  list.splice(idx, 1);
   await window.api.saveConfig(config);
 
   try {
@@ -466,69 +480,107 @@ async function removeAppFromKnob(knobId, appName) {
 // --- Process Search ---
 // Global reference to current search input to prevent duplicate listeners
 let currentSearchInput = null;
-
 function renderProcessSearch() {
-  const searchInput = document.getElementById('processSearch');  
+  const searchInput = document.getElementById('processSearch');
+  const filterSelect = document.getElementById('processFilter');
   const list = document.getElementById('processList');
-  if (!searchInput || !list) return;
-
-  // Only replace if it's different to prevent infinite loops
-  if (currentSearchInput !== searchInput) {
-    // Remove old listener if exists
-    if (currentSearchInput) {
-      currentSearchInput.oninput = null;
-    }
-    
-    currentSearchInput = searchInput;
-    searchInput.oninput = () => updateList(searchInput.value.toLowerCase());
+  if (!searchInput || !list || !filterSelect) return;
+  function applyFilters() {
+    const searchValue = searchInput.value.toLowerCase();
+    const filterValue = filterSelect.value;
+    updateList(searchValue, filterValue);
   }
-  
-  updateList('');
-
-  function updateList(filter) {
-    // Clear existing items
+  applyProcessFilters = applyFilters; // expose globally
+  searchInput.oninput = applyFilters;
+  filterSelect.onchange = applyFilters;
+  applyFilters();
+  function updateList(searchFilter, typeFilter) {
     while (list.firstChild) list.removeChild(list.firstChild);
-
     runningProcesses
-      .filter(name => name && name.toLowerCase().includes(filter))
-      .forEach(name => {
+      .filter(proc => {
+        if (!proc || !proc.name) return false;
+        const matchesSearch =
+          proc.name.toLowerCase().includes(searchFilter);
+        const matchesType =
+          typeFilter === 'all' ||
+          (typeFilter === 'gui' && proc.isGUI);
+        return matchesSearch && matchesType;
+      })
+      .forEach(proc => {
         const item = document.createElement('div');
-        item.textContent = sanitizeAppName(name);
-        item.id = `process-item-${name}`;
-        item.className = 'px-2 py-1 bg-slate-700 text-indigo-200 rounded cursor-move hover:bg-indigo-600 transition whitespace-nowrap capitalize max-h-8';
-
+        item.textContent = sanitizeAppName(proc.name);
+        item.id = `process-item-${proc.name}`;
+        item.className =
+          'px-2 py-1 bg-slate-700 text-indigo-200 rounded cursor-move hover:bg-indigo-600 transition whitespace-nowrap capitalize max-h-8';
         item.setAttribute('draggable', 'true');
-
-        // Use proper event handler function
-        const dragStartHandler = (e) => {
-          console.log("Dragging:", name);
-          
-          if (!name) {
-            e.preventDefault();
-            return;
-          }
-          
-          // Clear any existing data first
+        item.addEventListener('dragstart', (e) => {
           e.dataTransfer.clearData();
-          e.dataTransfer.setData('text/plain', name);
+          e.dataTransfer.setData('text/plain', proc.name);
           e.dataTransfer.effectAllowed = 'copy';
-          
-          // Add visual feedback
           item.style.opacity = '0.5';
-          
-          // Reset opacity after drag
-          setTimeout(() => {
-            item.style.opacity = '1';
-          }, 100);
-        };
-
-        item.addEventListener('dragstart', dragStartHandler);
-
+          setTimeout(() => (item.style.opacity = '1'), 100);
+        });
         list.appendChild(item);
       });
   }
 }
 
+function renderInputDeviceList() {
+  const list = document.getElementById('inputDeviceList');
+  if (!list) return;
+  while (list.firstChild) list.removeChild(list.firstChild);
+  if (!inputDevices || !inputDevices.length) return;
+
+  inputDevices.forEach((name, index) => {
+    const card = document.createElement('div');
+    card.id = `input-device-${index}`;
+    card.className = 'flex items-center gap-3 px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg cursor-move hover:bg-indigo-600 hover:border-indigo-500 transition group';
+    card.setAttribute('draggable', 'true');
+
+    const icon = document.createElement('div');
+    icon.className = 'w-8 h-8 rounded-md bg-slate-600 group-hover:bg-indigo-500 flex items-center justify-center text-lg shrink-0 transition';
+    icon.textContent = '🎤';
+
+    const label = document.createElement('div');
+    label.className = 'text-sm text-indigo-200 group-hover:text-white truncate transition';
+    label.textContent = name;
+
+    card.append(icon, label);
+
+    card.addEventListener('dragstart', (e) => {
+      e.dataTransfer.clearData();
+      e.dataTransfer.setData('text/plain', name);
+      e.dataTransfer.effectAllowed = 'copy';
+      card.style.opacity = '0.5';
+      setTimeout(() => card.style.opacity = '1', 100);
+    });
+
+    list.appendChild(card);
+  });
+}
+
+function createInputDeviceCard(name, knobId) {
+  const card = document.createElement('div');
+  card.className = "flex items-center gap-4 mb-3 p-3 rounded border border-gray-300 hover:bg-red-100 cursor-pointer transition overflow-hidden";
+  card.setAttribute('data-appname', name);
+
+  const icon = document.createElement('div');
+  icon.className = "w-10 h-10 rounded bg-slate-600 flex items-center justify-center text-xl";
+  icon.textContent = '🎤';
+
+  const label = document.createElement('div');
+  label.textContent = name;
+  label.className = "text-lg font-medium shrink capitalize text-wrap";
+
+  card.append(icon, label);
+
+  card.onclick = async () => {
+    await removeAppFromKnob(knobId, name);
+    card.remove();
+  };
+
+  return card;
+}
 // --- COM Port Settings ---
 async function refreshComPortListPreservingSelection() {
   const select = document.getElementById('comPortSelect');
@@ -624,6 +676,31 @@ function setupTabs() {
   buttons.tabMappings.click();
 }
 
+function setupSubTabs() {
+  const panels = {
+    subTabApps: document.getElementById('subContentApps'),
+    subTabDevices: document.getElementById('subContentDevices'),
+  };
+
+  const buttons = {
+    subTabApps: document.getElementById('subTabApps'),
+    subTabDevices: document.getElementById('subTabDevices'),
+  };
+
+  Object.entries(buttons).forEach(([id, btn]) => {
+    btn.addEventListener('click', () => {
+      Object.entries(panels).forEach(([panelId, content]) => {
+        const isActive = panelId === id;
+        content.classList.toggle('hidden', !isActive);
+        buttons[panelId].classList.toggle('border-b-2', isActive);
+        buttons[panelId].classList.toggle('border-indigo-400', isActive);
+        buttons[panelId].classList.toggle('text-indigo-400', isActive);
+        buttons[panelId].classList.toggle('text-slate-500', !isActive);
+      });
+    });
+  });
+}
+
 document.getElementById('saveAndRunBtn')?.addEventListener('click', async () => {
   await window.api.saveAndRun();  
 });
@@ -657,9 +734,9 @@ document.getElementById('vmVersionSelect')?.addEventListener('change', async (e)
 
 window.api.onBackendStatus(({ type, message }) => {
   if (type == 'success') {
-    document.getElementById('saveAndRunBtn').textContent = "Click to stop";
+    document.getElementById('saveAndRunBtn').textContent = "Stop";
   } else if (type == 'warning') {
-    document.getElementById('saveAndRunBtn').textContent = "Save and Run";
+    document.getElementById('saveAndRunBtn').textContent = "Run";
   }
   showAlert(type, message);
 });
@@ -668,54 +745,62 @@ function showAlert(type, message) {
   const alertContainer = document.getElementById('alertContainer');
   if (!alertContainer) return;
 
-  const colorMap = {
-    success: 'green',
-    info: 'blue',
-    warning: 'yellow',
-    error: 'red'
+  const colorStyles = {
+    success: { bg: 'rgba(20, 83, 45, 0.8)',   border: '#15803d', text: '#bbf7d0' },
+    info:    { bg: 'rgba(30, 58, 138, 0.8)',  border: '#1d4ed8', text: '#bfdbfe' },
+    warning: { bg: 'rgba(113, 63, 18, 0.8)', border: '#b45309', text: '#fde68a' },
+    error:   { bg: 'rgba(127, 29, 29, 0.8)', border: '#b91c1c', text: '#fecaca' },
   };
 
-  const color = colorMap[type] || 'blue';
+  const style = colorStyles[type] || colorStyles.info;
   const id = `alert-${Date.now()}`;
 
   const alert = document.createElement('div');
   alert.id = id;
   alert.className = `
-    relative w-full max-w-sm px-4 py-2 pr-10
-    bg-${color}-100 border border-${color}-200 text-${color}-800
-    text-sm font-medium rounded shadow-sm
+    relative w-full px-4 py-2 pr-10
+    text-sm font-medium rounded shadow-sm border
     opacity-0 translate-y-2
     transition-all duration-300 ease-out
   `.replace(/\s+/g, ' ').trim();
 
+  alert.style.backgroundColor = style.bg;
+  alert.style.borderColor = style.border;
+  alert.style.color = style.text;
+  alert.style.backdropFilter = 'blur(4px)';
+
   alert.innerHTML = `
     <span class="block text-center truncate">${message}</span>
     <button onclick="document.getElementById('${id}').remove()"
-            class="absolute top-2 right-2 text-${color}-500 hover:text-${color}-700 transition text-base leading-none">
+            class="absolute top-2 right-2 hover:opacity-70 transition text-base leading-none">
       ×
     </button>
   `;
 
+  alert.style.cursor = 'pointer';
+  let expanded = false;
+  const messageSpan = alert.querySelector('span');
+  alert.addEventListener('click', (e) => {
+    if (e.target.tagName === 'BUTTON') return; // don't trigger on close button
+    expanded = !expanded;
+    messageSpan.classList.toggle('truncate', !expanded);
+    messageSpan.classList.toggle('whitespace-normal', expanded);
+    messageSpan.classList.toggle('break-words', expanded);
+  });
+
   alertContainer.appendChild(alert);
 
-  // Trigger the animation on the next tick
   requestAnimationFrame(() => {
     alert.classList.remove('opacity-0', 'translate-y-2');
     alert.classList.add('opacity-100', 'translate-y-0');
   });
 
-  // Auto-dismiss with fade-out
   setTimeout(() => {
     alert.classList.remove('opacity-100', 'translate-y-0');
     alert.classList.add('opacity-0', 'translate-y-2');
-
-    // Remove from DOM after transition
-    setTimeout(() => {
-      document.getElementById(id)?.remove();
-    }, 300);
+    setTimeout(() => document.getElementById(id)?.remove(), 300);
   }, 4000);
 }
-
 // Simplified global drag/drop handlers - only prevent file drops
 document.addEventListener('dragover', (e) => {
   // Only prevent if it's a file being dragged from outside
@@ -733,9 +818,38 @@ document.addEventListener('drop', (e) => {
   }
 });
 
+//AutoStart
+async function loadAutoStartState() {
+  const autoStartCheckbox = document.getElementById('autoStartCheckbox');
+  if (!autoStartCheckbox) return;
+
+  try {
+    const enabled = await window.api.getAutoStart();
+    autoStartCheckbox.checked = enabled;
+  } catch (err) {
+    console.error('AutoStart load failed:', err);
+  }
+}
+
+function setupAutoStartListener() {
+  const autoStartCheckbox = document.getElementById('autoStartCheckbox');
+  if (!autoStartCheckbox) return;
+
+  autoStartCheckbox.addEventListener('change', async () => {
+    try {
+      await window.api.setAutoStart(autoStartCheckbox.checked);
+    } catch (err) {
+      console.error('AutoStart update failed:', err);
+    }
+  });
+}
 
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
   setupTabs();
+  setupSubTabs()
   refreshComPortListPreservingSelection();
+  setupAutoStartListener();
+  loadAutoStartState();
+  
 });
