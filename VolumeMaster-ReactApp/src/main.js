@@ -7,11 +7,13 @@ const yaml = require('yaml');
 const crypto = require('crypto');
 const sharp = require('sharp');
 const { execSync } = require('child_process');
-const { exec } = require('child_process');
 const extractIcon = require('extract-file-icon');
 const psList = require('ps-list').default;
 const kill = require('tree-kill');
 const path = require('path');
+const util = require('util');
+const exec = util.promisify(require('child_process').exec);
+const portAudio = require('naudiodon');
 
 let mainWindow;
 let tray;
@@ -53,23 +55,20 @@ function normalizePath(p) {
 
 // --- Config Functions ---
 function loadConfig() {
-  
   if (!configCache) {
     try {
       const file = fs.readFileSync(CONFIG_PATH, 'utf8');
       configCache = yaml.parse(file);
     } catch {
-      const file = fs.readFileSync(DEFAULT_CONFIG_PATH, 'utf8')
+      const file = fs.readFileSync(DEFAULT_CONFIG_PATH, 'utf8');
       configCache = yaml.parse(file);
     }
+
+    let dirty = false;
+    if (configCache.vm === undefined) { configCache.vm = false; dirty = true; }
+    if (configCache.vmversion === undefined) { configCache.vmversion = 'banana'; dirty = true; }
+    if (dirty) saveConfig(configCache);
   }
-  if(configCache.vm === undefined) {
-    configCache.vm = false; // Default to false if not set
-  }
-  if(configCache.vmversion === undefined) {
-    configCache.vmversion = 'banana'; // Default to 'banana' if not set
-  }
-  saveConfig(configCache); // Ensure config is saved with defaults
   return configCache;
 }
 
@@ -80,35 +79,27 @@ function saveConfig(data) {
 }
 
 // --- EXE Resolution ---
-function findRunningProcessExePath(exeName) {
+async function findRunningProcessExePath(exeName) {
   try {
     const baseName = path.basename(exeName, '.exe');
-    const cmd = `powershell -Command "Get-Process -Name '${baseName}' | Select-Object -ExpandProperty Path"`;
-    const output = execSync(cmd, { encoding: 'utf8' }).split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-    return output[0] || null;
-  } catch {
+    const cmd = `powershell -NoProfile -Command "Get-Process -Name '${baseName}' | Select-Object -ExpandProperty Path"`;
+
+    const { stdout } = await exec(cmd, { encoding: 'utf8' });
+    const output = stdout.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+
+    if (output[0]) {
+      exePathCache.set(exeName, output[0]);
+      return output[0];
+    }
+    return null;
+  } catch (err) {
+    console.error("findRunningProcessExePath failed:", err.message);
     return null;
   }
 }
 
-function findExePath(exeName) {
-  if (exePathCache.has(exeName)) return exePathCache.get(exeName);
 
-  const config = loadConfig();
- 
 
-  try {
-    const output = execSync(`where ${exeName}`, { encoding: 'utf8' })
-      .split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-    if (output.length > 0) {
-      exePathCache.set(exeName, output[0]);
-      return output[0];
-    }
-  } catch {}
-
-  exePathCache.set(exeName, null);
-  return null;
-}
 
 // --- Icon Handling ---
 async function saveIconToCache(programName, buffer) {
@@ -139,12 +130,16 @@ async function getAppIcon(exeName) {
   const programName = exeName.toLowerCase();
 
   // Cache check
+  
   const cached = loadIconFromCache(programName);
   if (cached) return cached;
 
   // Path resolution
-  let exePath = findRunningProcessExePath(exeName) || findExePath(exeName);
-  if (!exePath) return null;
+  let exePath = await findRunningProcessExePath(exeName);
+  if (!exePath) {
+    console.log('No running process found for', exeName);
+    return null;
+  }
 
   exePath = normalizePath(exePath).replace(/\//g, '\\');
   if (!fs.existsSync(exePath)) return null;
@@ -169,8 +164,21 @@ async function getAppIcon(exeName) {
 
 // --- IPC Handlers ---
 ipcMain.handle('load-config', () => loadConfig());
-ipcMain.handle('save-config', (_, data) => saveConfig(data));
+ipcMain.handle('save-config', (_, data) => {
+  const existing = loadConfig();
+  const cleaned = {
+    comport: data.comport ?? existing.comport,
+    baudrate: data.baudrate ?? existing.baudrate,
+    bytesize: data.bytesize ?? existing.bytesize,
+    parity: data.parity ?? existing.parity,
+    stopbits: data.stopbits ?? existing.stopbits,
+    vm: existing.vm,
+    vmversion: existing.vmversion,
+    Mappings: data.Mappings ?? existing.Mappings,
 
+  };
+  saveConfig(cleaned);
+});
 ipcMain.handle('open-exe-dialog', async () => {
   const result = await dialog.showOpenDialog({
     title: 'Select Executable',
@@ -184,20 +192,37 @@ ipcMain.handle('get-app-icon', async (_, exeName) => getAppIcon(exeName));
 
 ipcMain.handle('list-processes', async () => {
   try {
-    const processes = await psList();
-    const exeNames = new Set();
-    for (const p of processes) {
-      if (p.name.toLowerCase().endsWith('.exe')) {
-        exeNames.add(p.name);
-      }
-    }
-    return Array.from(exeNames).sort((a, b) => a.localeCompare(b));
+    const { stdout } = await exec(
+      `powershell -NoProfile -Command "Get-Process | Select-Object ProcessName, MainWindowTitle"`,
+      { encoding: 'utf8' }
+    );
+
+    const seen = new Map();
+
+    stdout
+      .split(/\r?\n/)
+      .map(l => l.trim())
+      .filter(Boolean)
+      .slice(2)
+      .forEach(line => {
+        const parts = line.split(/\s{2,}/);
+        const name = parts[0];
+        const windowTitle = parts[1] || '';
+        const exeName = name.endsWith('.exe') ? name : `${name}.exe`;
+
+        const existing = seen.get(exeName);
+        // If not seen yet, or this entry has a title and the existing one doesn't
+        if (!existing || (!existing.isGUI && windowTitle !== '')) {
+          seen.set(exeName, { name: exeName, isGUI: windowTitle !== '' });
+        }
+      });
+
+    return [...seen.values()];
   } catch (err) {
     console.error('Failed to list processes:', err);
     return [];
   }
 });
-
 // Serial Port Handling
 
 ipcMain.handle('list-serial-ports', async () => {
@@ -382,6 +407,25 @@ function createWindow() {
   */
 }
 
+// Auto-start Handling
+ipcMain.handle('get-auto-start', () => {
+  return app.getLoginItemSettings({
+    path: app.getPath('exe'),
+    args: ['--hidden']
+  }).openAtLogin;
+});
+
+ipcMain.handle('set-auto-start', (event, enabled) => {
+  app.setLoginItemSettings({
+    openAtLogin: enabled,
+    path: app.getPath('exe'),
+    args: ['--hidden']
+  });
+   console.log('[AutoStart] set:', app.getPath('exe'), enabled);
+
+  return true;
+});
+
 function createTray() {
   const trayIcon = nativeImage.createFromPath(iconPathNormal);
   
@@ -416,7 +460,12 @@ app.whenReady().then(() => {
   
   createWindow();
   createTray();
+  startBackendWithRetry()
+  if (process.argv.includes('--hidden')) {
+      mainWindow.hide();
+    }
 
+  
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
@@ -430,7 +479,6 @@ app.on('window-all-closed', () => {
 try {
 	require('electron-reloader')(module);
 } catch {}
-
 
 
 function killBackendByName(name = 'VolumeMaster-Headless.exe') {
@@ -453,6 +501,20 @@ function killBackendByName(name = 'VolumeMaster-Headless.exe') {
     });
   });
 }
+
+ipcMain.handle('list-input-devices', async () => {
+  const portAudio = require('naudiodon');
+  const devices = portAudio.getDevices();
+
+  const cleanDevices = devices
+    .filter(d =>
+      d.maxInputChannels > 0 &&
+      d.hostAPIName === 'Windows WASAPI'
+    )
+    .map(d => d.name);
+
+  return [...new Set(cleanDevices)]; // remove duplicates
+});
 
 
 
