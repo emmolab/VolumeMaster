@@ -3,7 +3,7 @@ set -e  # Exit on any error
 
 # App metadata (customize these)
 APP_NAME="VolumeMaster"          # Change to your app name
-APP_VERSION="1.03"          # Optional version
+APP_VERSION="1.04"          # Optional version
 EXEC_NAME="main"           # Name of the PyInstaller executable (from main.py)
 DESKTOP_EXEC="main"        # Exec line in .desktop file
 
