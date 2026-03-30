@@ -131,8 +131,9 @@ function createKnobSection(knobId) {
   section.appendChild(createKnobHeader(knobId));
   
   // Add Master Volume button to each knob section
-  section.appendChild(createMasterVolumeButton(knobId));
-  const apps = config.Mappings[knobId]?.ProcessNames || [];
+  const processNames = config.Mappings[knobId]?.ProcessNames || [];
+  const micNames = config.Mappings[knobId]?.MicNames || [];
+  const apps = [...processNames, ...micNames];
   
   if (apps.length === 0) {
     section.appendChild(createEmptyMessage());
