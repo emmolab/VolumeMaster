@@ -3,7 +3,7 @@ import { cloneConfig } from './config-sync.js';
 import { setupTabs, setupSubTabs } from './tabs.js';
 import { refreshComPortListPreservingSelection, setupComPortListeners } from './com-port.js';
 import { loadAutoStartState, setupAutoStartListener } from './autostart.js';
-import { setupSettingsListeners, applyVoiceMeeterUiFromMain } from './settings.js';
+import { setupSettingsListeners, applyVoiceMeeterUiFromMain, applyInitialBackendStatus } from './settings.js';
 import {
   loadProcessList,
   loadInputDevices,
@@ -51,6 +51,7 @@ async function bootstrapFromConfig() {
   await Promise.all([loadProcessList(), loadInputDevices()]);
   await renderAllKnobsAndApps();
   await applyVoiceMeeterUiFromMain();
+  await applyInitialBackendStatus();
 }
 
 function init() {

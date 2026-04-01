@@ -22,6 +22,8 @@ contextBridge.exposeInMainWorld('api', {
 
   getInputDevices: () => ipcRenderer.invoke('list-input-devices'),
 
+  getBackendStatus: () => ipcRenderer.invoke('get-backend-status'),
+
   listPresets: () => ipcRenderer.invoke('list-presets'),
   savePreset: (name, mappings) => ipcRenderer.invoke('save-preset', name, mappings),
   loadPreset: (name) => ipcRenderer.invoke('load-preset', name),

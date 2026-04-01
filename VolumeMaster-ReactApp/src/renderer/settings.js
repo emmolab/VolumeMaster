@@ -37,6 +37,12 @@ export function setupSettingsListeners() {
   });
 }
 
+export async function applyInitialBackendStatus() {
+  const running = await window.api.getBackendStatus();
+  const btn = document.getElementById('saveAndRunBtn');
+  if (btn) btn.textContent = running ? 'Stop' : 'Run';
+}
+
 export async function applyVoiceMeeterUiFromMain() {
   const vmEnabled = await window.api.getVMEnabled();
   const vmBtn = document.getElementById('vmEnableButton');

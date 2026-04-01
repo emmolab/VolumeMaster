@@ -4,7 +4,7 @@ const portAudio = require('naudiodon');
 
 const { loadConfig, saveConfig, cloneConfigSnapshot } = require('./config-store');
 const { getAppIcon } = require('./icon-service');
-const { startBackendWithRetry, killBackendByName } = require('./backend-process');
+const { startBackendWithRetry, killBackendByName, getBackendProcess } = require('./backend-process');
 
 const exec = util.promisify(require('child_process').exec);
 
@@ -159,6 +159,8 @@ function registerIpcHandlers() {
       .map((d) => d.name);
     return [...new Set(cleanDevices)];
   });
+
+  ipcMain.handle('get-backend-status', () => !!getBackendProcess());
 
   ipcMain.handle('list-presets', () => {
     const config = loadConfig();
