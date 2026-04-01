@@ -128,10 +128,61 @@
         ></div>
       </div>
 
+      <!-- Presets Bar -->
+      <div id="presetsBar" class="flex items-center gap-2 mt-2 mb-3 shrink-0">
+        <!-- Normal state -->
+        <select
+          id="presetSelect"
+          class="flex-1 p-1.5 text-sm border border-slate-700 rounded bg-slate-800 text-gray-300 focus:outline-indigo-400 focus:ring-1 focus:ring-indigo-400"
+        >
+          <option value="">— No Preset —</option>
+        </select>
+        <button
+          id="newPresetBtn"
+          class="px-3 py-1.5 text-sm bg-slate-700 hover:bg-slate-600 text-white rounded transition font-medium"
+        >
+          + New
+        </button>
+        <button
+          id="savePresetBtn"
+          class="px-3 py-1.5 text-sm bg-indigo-600 hover:bg-indigo-700 text-white rounded transition font-medium"
+        >
+          Save
+        </button>
+        <button
+          id="deletePresetBtn"
+          class="px-3 py-1.5 text-sm bg-slate-700 hover:bg-red-700 text-white rounded transition font-medium"
+        >
+          Delete
+        </button>
+      </div>
+
+      <!-- Preset Name Input (shown when creating a new preset) -->
+      <div id="presetNameRow" class="hidden flex items-center gap-2 mb-3 shrink-0">
+        <input
+          id="presetNameInput"
+          type="text"
+          placeholder="Preset name..."
+          class="flex-1 p-1.5 text-sm border border-slate-700 rounded bg-slate-800 text-gray-300 placeholder-slate-500 focus:outline-indigo-400 focus:ring-1 focus:ring-indigo-400"
+        />
+        <button
+          id="confirmPresetBtn"
+          class="px-3 py-1.5 text-sm bg-indigo-600 hover:bg-indigo-700 text-white rounded transition font-medium"
+        >
+          Create
+        </button>
+        <button
+          id="cancelPresetBtn"
+          class="px-3 py-1.5 text-sm bg-slate-700 hover:bg-slate-600 text-white rounded transition font-medium"
+        >
+          Cancel
+        </button>
+      </div>
+
       <!-- Knobs (always visible) -->
       <div
         id="knobsAppsContainer"
-        class="custom-scroll flex flex-wrap gap-4 overflow-y-auto pb-2 mt-3 mb-3 grow items-start"
+        class="custom-scroll flex min-h-0 w-full flex-row flex-nowrap gap-3 overflow-x-auto overflow-y-hidden pb-2 mt-3 mb-3 grow items-stretch"
       ></div>
 
       <button
@@ -209,6 +260,6 @@
     <!-- Notifications (fixed, won't affect layout) -->
     <div id="alertContainer"></div>
 
-    <script src="renderer.js"></script>
+    <script type="module" src="renderer/app.js"></script>
   </body>
 </html>

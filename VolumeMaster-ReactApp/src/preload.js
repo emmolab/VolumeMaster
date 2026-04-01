@@ -19,9 +19,13 @@ contextBridge.exposeInMainWorld('api', {
 
   getAutoStart: () => ipcRenderer.invoke('get-auto-start'),
   setAutoStart: (enabled) => ipcRenderer.invoke('set-auto-start', enabled),
-  
-  getInputDevices: () => ipcRenderer.invoke('list-input-devices')
-  
+
+  getInputDevices: () => ipcRenderer.invoke('list-input-devices'),
+
+  listPresets: () => ipcRenderer.invoke('list-presets'),
+  savePreset: (name, mappings) => ipcRenderer.invoke('save-preset', name, mappings),
+  loadPreset: (name) => ipcRenderer.invoke('load-preset', name),
+  deletePreset: (name) => ipcRenderer.invoke('delete-preset', name),
 });
 
 
