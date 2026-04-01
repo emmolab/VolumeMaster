@@ -3,6 +3,10 @@
 // Electron must be required before any project module so `require('electron')` resolves to the API, not the npm path stub.
 const { app, BrowserWindow } = require('electron');
 
+if (process.platform === 'win32') {
+  app.commandLine.appendSwitch('disable-features', 'AllowNativeOleApiForDragDrop');
+}
+
 const { createWindow } = require('./main/window');
 const { createTray } = require('./main/tray');
 const { registerIpcHandlers } = require('./main/ipc-handlers');
