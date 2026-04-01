@@ -10,6 +10,7 @@ import {
   setupProcessSearchFocus,
 } from './sources.js';
 import { renderAllKnobsAndApps } from './mappings.js';
+import { setupPresets } from './presets.js';
 
 function setupGlobalFileDropGuards() {
   document.addEventListener('dragover', (e) => {
@@ -63,6 +64,7 @@ function init() {
   setupProcessSearchFocus();
   setupGlobalFileDropGuards();
   setupMappingDragGlobalDragOver();
+  setupPresets();
   bootstrapFromConfig();
 }
 

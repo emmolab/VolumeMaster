@@ -22,6 +22,7 @@ function registerIpcHandlers() {
     }
     merged.vm = existing.vm;
     merged.vmversion = existing.vmversion;
+    merged.presets = existing.presets;
     saveConfig(merged);
     return cloneConfigSnapshot(loadConfig());
   });
@@ -157,6 +158,34 @@ function registerIpcHandlers() {
       .filter((d) => d.maxInputChannels > 0 && d.hostAPIName === 'Windows WASAPI')
       .map((d) => d.name);
     return [...new Set(cleanDevices)];
+  });
+
+  ipcMain.handle('list-presets', () => {
+    const config = loadConfig();
+    return Object.keys(config.presets || {});
+  });
+
+  ipcMain.handle('save-preset', (_, name, mappings) => {
+    if (!name || typeof name !== 'string') return;
+    const config = loadConfig();
+    if (!config.presets || typeof config.presets !== 'object') config.presets = {};
+    config.presets[name] = JSON.parse(JSON.stringify(mappings));
+    saveConfig(config);
+  });
+
+  ipcMain.handle('load-preset', (_, name) => {
+    const config = loadConfig();
+    const preset = config.presets?.[name];
+    if (!preset) return null;
+    return JSON.parse(JSON.stringify(preset));
+  });
+
+  ipcMain.handle('delete-preset', (_, name) => {
+    const config = loadConfig();
+    if (config.presets?.[name] !== undefined) {
+      delete config.presets[name];
+      saveConfig(config);
+    }
   });
 }
 
