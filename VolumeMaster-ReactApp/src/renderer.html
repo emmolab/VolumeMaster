@@ -131,7 +131,7 @@
       <!-- Knobs (always visible) -->
       <div
         id="knobsAppsContainer"
-        class="custom-scroll flex flex-wrap gap-4 overflow-y-auto pb-2 mt-3 mb-3 grow items-start"
+        class="custom-scroll flex min-h-0 w-full flex-row flex-nowrap gap-3 overflow-x-auto overflow-y-hidden pb-2 mt-3 mb-3 grow items-stretch"
       ></div>
 
       <button
@@ -209,6 +209,6 @@
     <!-- Notifications (fixed, won't affect layout) -->
     <div id="alertContainer"></div>
 
-    <script src="renderer.js"></script>
+    <script type="module" src="renderer/app.js"></script>
   </body>
 </html>
