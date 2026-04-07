@@ -120,6 +120,16 @@ function registerIpcHandlers() {
     }
   });
 
+  ipcMain.handle('stop-backend', async (event) => {
+    const { deviceId } = getDeviceContext(event);
+    console.log(`[IPC] stop-backend for device ${deviceId}`);
+    try {
+      await killBackend(deviceId);
+    } catch (err) {
+      console.error('Error during stop-backend:', err);
+    }
+  });
+
   ipcMain.handle('enable-vm', (event) => {
     const { deviceDir } = getDeviceContext(event);
     const config = loadConfig(deviceDir);
@@ -174,6 +184,19 @@ function registerIpcHandlers() {
       .filter((d) => d.maxInputChannels > 0 && d.hostAPIName === 'Windows WASAPI')
       .map((d) => d.name);
     return [...new Set(cleanDevices)];
+  });
+
+  ipcMain.handle('get-volume-notifications', (event) => {
+    const { deviceDir } = getDeviceContext(event);
+    const config = loadConfig(deviceDir);
+    return config.volumeNotifications !== false;
+  });
+
+  ipcMain.handle('set-volume-notifications', (event, enabled) => {
+    const { deviceDir } = getDeviceContext(event);
+    const config = loadConfig(deviceDir);
+    config.volumeNotifications = !!enabled;
+    saveConfig(deviceDir, config);
   });
 
   ipcMain.handle('get-backend-status', (event) => {

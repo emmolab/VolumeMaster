@@ -3,13 +3,13 @@ import { cloneConfig } from './config-sync.js';
 import { setupTabs, setupSubTabs } from './tabs.js';
 import { refreshComPortListPreservingSelection, setupComPortListeners } from './com-port.js';
 import { loadAutoStartState, setupAutoStartListener } from './autostart.js';
-import { setupSettingsListeners, applyVoiceMeeterUiFromMain, applyInitialBackendStatus } from './settings.js';
+import { setupSettingsListeners, applyVoiceMeeterUiFromMain, applyInitialBackendStatus, applyNotificationSettings } from './settings.js';
 import {
   loadProcessList,
   loadInputDevices,
   setupProcessSearchFocus,
 } from './sources.js';
-import { renderAllKnobsAndApps } from './mappings.js';
+import { renderAllKnobsAndApps, updateKnobVolume } from './mappings.js';
 import { setupPresets } from './presets.js';
 import { setupDeviceHeader, setupNewDeviceButton, setupRemoveDeviceButton } from './device.js';
 
@@ -53,10 +53,12 @@ async function bootstrapFromConfig() {
   await renderAllKnobsAndApps();
   await applyVoiceMeeterUiFromMain();
   await applyInitialBackendStatus();
+  await applyNotificationSettings();
   await setupDeviceHeader();
 }
 
 function init() {
+  window.api.onVolumeUpdate(({ index, value }) => updateKnobVolume(index, value));
   setupTabs();
   setupSubTabs();
   setupComPortListeners();

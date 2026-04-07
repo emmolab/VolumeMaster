@@ -2,7 +2,12 @@ import { showAlert } from './alerts.js';
 
 export function setupSettingsListeners() {
   document.getElementById('saveAndRunBtn')?.addEventListener('click', async () => {
-    await window.api.saveAndRun();
+    const btn = document.getElementById('saveAndRunBtn');
+    if (btn.textContent.trim() === 'Stop') {
+      await window.api.stopBackend();
+    } else {
+      await window.api.saveAndRun();
+    }
   });
 
   document.getElementById('vmEnableButton')?.addEventListener('click', async () => {
@@ -27,6 +32,10 @@ export function setupSettingsListeners() {
     await window.api.setVMVersion(e.target.value);
   });
 
+  document.getElementById('volumeNotifsCheckbox')?.addEventListener('change', async (e) => {
+    await window.api.setVolumeNotifications(e.target.checked);
+  });
+
   window.api.onBackendStatus(({ type, message }) => {
     if (type === 'success') {
       document.getElementById('saveAndRunBtn').textContent = 'Stop';
@@ -41,6 +50,12 @@ export async function applyInitialBackendStatus() {
   const running = await window.api.getBackendStatus();
   const btn = document.getElementById('saveAndRunBtn');
   if (btn) btn.textContent = running ? 'Stop' : 'Run';
+}
+
+export async function applyNotificationSettings() {
+  const enabled = await window.api.getVolumeNotifications();
+  const cb = document.getElementById('volumeNotifsCheckbox');
+  if (cb) cb.checked = enabled;
 }
 
 export async function applyVoiceMeeterUiFromMain() {

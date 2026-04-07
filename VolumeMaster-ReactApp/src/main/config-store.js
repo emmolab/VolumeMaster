@@ -58,6 +58,7 @@ function loadConfig(deviceDir) {
   let dirty = false;
   if (config.vm === undefined) { config.vm = false; dirty = true; }
   if (config.vmversion === undefined) { config.vmversion = 'banana'; dirty = true; }
+  if (config.volumeNotifications === undefined) { config.volumeNotifications = true; dirty = true; }
   if (dirty) saveConfig(deviceDir, config);
 
   configCaches.set(deviceDir, config);

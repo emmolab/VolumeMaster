@@ -4,6 +4,7 @@ const treeKill = require('tree-kill');
 
 const { setTrayImageNormal, setTrayImageCrashed } = require('./tray');
 const deviceManager = require('./device-manager');
+const { handleVolumeChange } = require('./notification-window');
 
 const headlessExePath = path.join(process.resourcesPath, 'VolumeMaster-Headless.exe');
 
@@ -61,7 +62,23 @@ function startBackend(deviceId, deviceDir) {
   sendStatusToDevice(deviceId, 'success', 'Backend started successfully.');
 
   proc.stdout.on('data', (data) => {
-    sendStatusToDevice(deviceId, 'info', `[Backend] ${data}`);
+    const lines = data.toString().split(/\r?\n/);
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      if (trimmed.startsWith('VOLUME:')) {
+        const parts = trimmed.split(':');
+        if (parts.length === 3) {
+          const index = parseInt(parts[1], 10);
+          const value = parseInt(parts[2], 10);
+          const win = deviceManager.getWindowForDevice(deviceId);
+          if (win) win.webContents.send('volume-update', { index, value });
+          handleVolumeChange(deviceId, deviceDir, index, value);
+        }
+      } else {
+        sendStatusToDevice(deviceId, 'info', `[Backend] ${trimmed}`);
+      }
+    }
   });
 
   proc.stderr.on('data', (data) => {

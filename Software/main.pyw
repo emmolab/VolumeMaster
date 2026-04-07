@@ -300,6 +300,7 @@ def main():
                     if index not in volumes or volumes[index] != val:
                         volumes[index] = val
                         process_audio_change(index, val)
+                        print(f'VOLUME:{index}:{val}', flush=True)
                     last_update_time = now
 
             if time.time() - timeSinceLastRefresh > 2:

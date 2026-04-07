@@ -2,6 +2,34 @@ import { state } from './state.js';
 import { saveConfigAndSync } from './config-sync.js';
 import { sanitizeAppName } from './utils.js';
 
+// Live volume levels keyed by knobId string
+const knobVolumes = {};
+
+function getKnobArcPath(value) {
+  if (value <= 0) return '';
+  const cx = 16, cy = 16, r = 11;
+  const toRad = (d) => (d * Math.PI) / 180;
+  const startAngle = 225; // 7 o'clock, degrees clockwise from top
+  const sweep = 270 * (value / 100);
+  const endAngle = startAngle + sweep;
+  const sx = cx + r * Math.sin(toRad(startAngle));
+  const sy = cy - r * Math.cos(toRad(startAngle));
+  const ex = cx + r * Math.sin(toRad(endAngle));
+  const ey = cy - r * Math.cos(toRad(endAngle));
+  return `M ${sx.toFixed(2)} ${sy.toFixed(2)} A ${r} ${r} 0 ${sweep > 180 ? 1 : 0} 1 ${ex.toFixed(2)} ${ey.toFixed(2)}`;
+}
+
+export function updateKnobVolume(index, value) {
+  const knobId = String(index);
+  knobVolumes[knobId] = value;
+  const section = document.getElementById(`knob-section-${knobId}`);
+  if (!section) return;
+  const arcEl = section.querySelector('[data-knob-arc]');
+  const pctEl = section.querySelector('[data-knob-pct]');
+  if (arcEl) arcEl.setAttribute('d', getKnobArcPath(value));
+  if (pctEl) pctEl.textContent = `${value}%`;
+}
+
 /** Knob section given a highlight during drag; cleared on drop / dragend / leaving knobs area. */
 let dragHighlightSection = null;
 
@@ -262,10 +290,51 @@ async function addMasterVolume(knobId) {
 }
 
 function createKnobHeader(knobId) {
+  const wrapper = document.createElement('div');
+  wrapper.className = 'flex items-center gap-2 mb-3';
+
+  const svgNS = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(svgNS, 'svg');
+  svg.setAttribute('viewBox', '0 0 32 32');
+  svg.setAttribute('width', '38');
+  svg.setAttribute('height', '38');
+  svg.style.flexShrink = '0';
+
+  // Background track arc (270°, from 7 o'clock to 5 o'clock clockwise)
+  const bgArc = document.createElementNS(svgNS, 'path');
+  bgArc.setAttribute('d', 'M 8.22 23.78 A 11 11 0 1 1 23.78 23.78');
+  bgArc.setAttribute('fill', 'none');
+  bgArc.setAttribute('stroke', '#334155');
+  bgArc.setAttribute('stroke-width', '3');
+  bgArc.setAttribute('stroke-linecap', 'round');
+
+  // Value arc (filled portion)
+  const valArc = document.createElementNS(svgNS, 'path');
+  const initValue = knobVolumes[knobId] ?? 0;
+  valArc.setAttribute('d', getKnobArcPath(initValue));
+  valArc.setAttribute('fill', 'none');
+  valArc.setAttribute('stroke', '#818cf8');
+  valArc.setAttribute('stroke-width', '3');
+  valArc.setAttribute('stroke-linecap', 'round');
+  valArc.setAttribute('data-knob-arc', '');
+
+  svg.append(bgArc, valArc);
+
+  const textCol = document.createElement('div');
+  textCol.className = 'flex flex-col min-w-0';
+
   const header = document.createElement('h2');
   header.textContent = `Knob ${knobId}`;
-  header.className = 'text-indigo-400 text-xl font-bold mb-4';
-  return header;
+  header.className = 'text-indigo-400 text-base font-bold leading-tight';
+
+  const pct = document.createElement('span');
+  pct.textContent = `${initValue}%`;
+  pct.className = 'text-slate-500 text-xs';
+  pct.setAttribute('data-knob-pct', '');
+
+  textCol.append(header, pct);
+  wrapper.append(svg, textCol);
+  return wrapper;
 }
 
 function createEmptyMessage() {

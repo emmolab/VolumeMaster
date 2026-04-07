@@ -10,7 +10,9 @@ contextBridge.exposeInMainWorld('api', {
   getComPort: () => ipcRenderer.invoke('get-com-port'),
   setComPort: (port) => ipcRenderer.invoke('set-com-port', port),
   saveAndRun: () => ipcRenderer.invoke('save-and-run'),
+  stopBackend: () => ipcRenderer.invoke('stop-backend'),
   onBackendStatus: (callback) => ipcRenderer.on('backend-status', (_, data) => callback(data)),
+  onVolumeUpdate: (callback) => ipcRenderer.on('volume-update', (_, data) => callback(data)),
   enableVM: () => ipcRenderer.invoke('enable-vm'),
   disableVM: () => ipcRenderer.invoke('disable-vm'),
   getVMEnabled: () => ipcRenderer.invoke('get-vm-enabled'),
@@ -23,6 +25,9 @@ contextBridge.exposeInMainWorld('api', {
   getInputDevices: () => ipcRenderer.invoke('list-input-devices'),
 
   getBackendStatus: () => ipcRenderer.invoke('get-backend-status'),
+
+  getVolumeNotifications: () => ipcRenderer.invoke('get-volume-notifications'),
+  setVolumeNotifications: (enabled) => ipcRenderer.invoke('set-volume-notifications', enabled),
 
   listPresets: () => ipcRenderer.invoke('list-presets'),
   savePreset: (name, mappings) => ipcRenderer.invoke('save-preset', name, mappings),
