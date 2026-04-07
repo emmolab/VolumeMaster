@@ -9,11 +9,8 @@ const STRINGIFY_OPTIONS = {
   aliasDuplicateObjects: false,
 };
 
-let configCache = null;
-
-function configPath() {
-  return path.join(require('electron').app.getPath('userData'), 'config.yaml');
-}
+// Per-device config cache: Map<deviceDir, config>
+const configCaches = new Map();
 
 /**
  * YAML may parse merge keys / aliases so multiple knobs share one ProcessNames or MicNames array.
@@ -36,46 +33,42 @@ function detachMappingArrays(cfg) {
       cfg.Mappings[key] = { ProcessNames: [], MicNames: [] };
       continue;
     }
-    const pn = m.ProcessNames;
-    const mn = m.MicNames;
-    m.ProcessNames = coerceNameList(pn);
-    m.MicNames = coerceNameList(mn);
+    m.ProcessNames = coerceNameList(m.ProcessNames);
+    m.MicNames = coerceNameList(m.MicNames);
   }
   return cfg;
 }
 
-function loadConfig() {
-  if (!configCache) {
-    const cfgFile = configPath();
-    try {
-      const file = fs.readFileSync(cfgFile, 'utf8');
-      configCache = yaml.parse(file);
-    } catch {
-      const file = fs.readFileSync(DEFAULT_CONFIG_PATH, 'utf8');
-      configCache = yaml.parse(file);
-    }
-
-    detachMappingArrays(configCache);
-
-    let dirty = false;
-    if (configCache.vm === undefined) {
-      configCache.vm = false;
-      dirty = true;
-    }
-    if (configCache.vmversion === undefined) {
-      configCache.vmversion = 'banana';
-      dirty = true;
-    }
-    if (dirty) saveConfig(configCache);
-  }
-  return configCache;
+function configFilePath(deviceDir) {
+  return path.join(deviceDir, 'config.yaml');
 }
 
-function saveConfig(data) {
+function loadConfig(deviceDir) {
+  if (configCaches.has(deviceDir)) return configCaches.get(deviceDir);
+
+  let config;
+  try {
+    config = yaml.parse(fs.readFileSync(configFilePath(deviceDir), 'utf8'));
+  } catch {
+    config = yaml.parse(fs.readFileSync(DEFAULT_CONFIG_PATH, 'utf8'));
+  }
+
+  detachMappingArrays(config);
+
+  let dirty = false;
+  if (config.vm === undefined) { config.vm = false; dirty = true; }
+  if (config.vmversion === undefined) { config.vmversion = 'banana'; dirty = true; }
+  if (dirty) saveConfig(deviceDir, config);
+
+  configCaches.set(deviceDir, config);
+  return config;
+}
+
+function saveConfig(deviceDir, data) {
   if (!data || typeof data !== 'object') return;
   detachMappingArrays(data);
-  configCache = data;
-  fs.writeFileSync(configPath(), yaml.stringify(data, STRINGIFY_OPTIONS), 'utf8');
+  configCaches.set(deviceDir, data);
+  fs.writeFileSync(configFilePath(deviceDir), yaml.stringify(data, STRINGIFY_OPTIONS), 'utf8');
 }
 
 function cloneConfigSnapshot(cfg) {

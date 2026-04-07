@@ -1,10 +1,24 @@
 const path = require('path');
 const { BrowserWindow } = require('electron');
+const deviceManager = require('./device-manager');
 
-function createWindow() {
-  const mainWindow = new BrowserWindow({
+function createWindow(deviceId) {
+  const device = deviceManager.getDeviceById(deviceId);
+  const title = device ? `VolumeMaster — ${device.name}` : 'VolumeMaster';
+
+  const existingWindows = BrowserWindow.getAllWindows();
+  const positionOpts = existingWindows.length === 0
+    ? {}
+    : (() => {
+        const [x, y] = existingWindows[existingWindows.length - 1].getPosition();
+        return { x: x + 30, y: y + 30 };
+      })();
+
+  const win = new BrowserWindow({
     width: 1000,
     height: 700,
+    ...positionOpts,
+    title,
     icon: path.join(__dirname, '..', 'assets', 'icons', 'icon.ico'),
     autoHideMenuBar: true,
     webPreferences: {
@@ -14,14 +28,22 @@ function createWindow() {
     },
   });
 
-  mainWindow.loadFile('src/renderer.html');
+  deviceManager.registerWindowDevice(win, deviceId);
+  win.loadFile('src/renderer.html');
 
-  mainWindow.on('minimize', (event) => {
+  win.on('minimize', (event) => {
     event.preventDefault();
-    mainWindow.hide();
+    win.hide();
   });
 
-  return mainWindow;
+  win.on('close', (event) => {
+    if (!require('electron').app.isQuiting) {
+      event.preventDefault();
+      win.hide();
+    }
+  });
+
+  return win;
 }
 
 module.exports = { createWindow };

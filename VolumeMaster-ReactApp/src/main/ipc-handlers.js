@@ -4,17 +4,31 @@ const portAudio = require('naudiodon');
 
 const { loadConfig, saveConfig, cloneConfigSnapshot } = require('./config-store');
 const { getAppIcon } = require('./icon-service');
-const { startBackendWithRetry, killBackendByName, getBackendProcess } = require('./backend-process');
+const { startBackend, killBackend, getBackendProcess } = require('./backend-process');
+const deviceManager = require('./device-manager');
 
 const exec = util.promisify(require('child_process').exec);
+
+/** Resolves the deviceId and deviceDir for the window that sent an IPC event. */
+function getDeviceContext(event) {
+  const { BrowserWindow } = require('electron');
+  const win = BrowserWindow.fromWebContents(event.sender);
+  const deviceId = deviceManager.getDeviceForWindow(win);
+  const deviceDir = deviceManager.getDeviceDir(deviceId);
+  return { win, deviceId, deviceDir };
+}
 
 function registerIpcHandlers() {
   const { ipcMain, dialog, app } = require('electron');
 
-  ipcMain.handle('load-config', () => cloneConfigSnapshot(loadConfig()));
+  ipcMain.handle('load-config', (event) => {
+    const { deviceDir } = getDeviceContext(event);
+    return cloneConfigSnapshot(loadConfig(deviceDir));
+  });
 
-  ipcMain.handle('save-config', (_, data) => {
-    const existing = loadConfig();
+  ipcMain.handle('save-config', (event, data) => {
+    const { deviceDir } = getDeviceContext(event);
+    const existing = loadConfig(deviceDir);
     const incoming = data && typeof data === 'object' ? data : {};
     const merged = { ...existing };
     for (const [key, val] of Object.entries(incoming)) {
@@ -23,8 +37,8 @@ function registerIpcHandlers() {
     merged.vm = existing.vm;
     merged.vmversion = existing.vmversion;
     merged.presets = existing.presets;
-    saveConfig(merged);
-    return cloneConfigSnapshot(loadConfig());
+    saveConfig(deviceDir, merged);
+    return cloneConfigSnapshot(loadConfig(deviceDir));
   });
 
   ipcMain.handle('open-exe-dialog', async () => {
@@ -46,7 +60,6 @@ function registerIpcHandlers() {
       );
 
       const seen = new Map();
-
       stdout
         .split(/\r?\n/)
         .map((l) => l.trim())
@@ -84,55 +97,59 @@ function registerIpcHandlers() {
     }
   });
 
-  ipcMain.handle('get-com-port', () => {
-    const config = loadConfig();
-    return config.comport || null;
+  ipcMain.handle('get-com-port', (event) => {
+    const { deviceDir } = getDeviceContext(event);
+    return loadConfig(deviceDir).comport || null;
   });
 
-  ipcMain.handle('set-com-port', (_, port) => {
-    const config = loadConfig();
+  ipcMain.handle('set-com-port', (event, port) => {
+    const { deviceDir } = getDeviceContext(event);
+    const config = loadConfig(deviceDir);
     config.comport = port;
-    saveConfig(config);
+    saveConfig(deviceDir, config);
   });
 
-  ipcMain.handle('save-and-run', async () => {
-    console.log('[IPC] save-and-run triggered');
+  ipcMain.handle('save-and-run', async (event) => {
+    const { deviceId, deviceDir } = getDeviceContext(event);
+    console.log(`[IPC] save-and-run for device ${deviceId}`);
     try {
-      await killBackendByName('VolumeMaster-Headless.exe');
-      await startBackendWithRetry();
+      await killBackend(deviceId);
+      startBackend(deviceId, deviceDir);
     } catch (err) {
       console.error('Error during save-and-run:', err);
     }
   });
 
-  ipcMain.handle('enable-vm', async () => {
-    const config = loadConfig();
+  ipcMain.handle('enable-vm', (event) => {
+    const { deviceDir } = getDeviceContext(event);
+    const config = loadConfig(deviceDir);
     config.vm = true;
-    saveConfig(config);
+    saveConfig(deviceDir, config);
   });
 
-  ipcMain.handle('disable-vm', async () => {
-    const config = loadConfig();
+  ipcMain.handle('disable-vm', (event) => {
+    const { deviceDir } = getDeviceContext(event);
+    const config = loadConfig(deviceDir);
     config.vm = false;
-    saveConfig(config);
+    saveConfig(deviceDir, config);
   });
 
-  ipcMain.handle('get-vm-enabled', () => {
-    const config = loadConfig();
-    const vmEnabled =
-      config.vm === true || (typeof config.vm === 'string' && config.vm.toLowerCase() === 'true');
-    return vmEnabled;
+  ipcMain.handle('get-vm-enabled', (event) => {
+    const { deviceDir } = getDeviceContext(event);
+    const config = loadConfig(deviceDir);
+    return config.vm === true || (typeof config.vm === 'string' && config.vm.toLowerCase() === 'true');
   });
 
-  ipcMain.handle('set-vm-version', async (_, version) => {
-    const config = loadConfig();
+  ipcMain.handle('set-vm-version', (event, version) => {
+    const { deviceDir } = getDeviceContext(event);
+    const config = loadConfig(deviceDir);
     config.vmversion = version;
-    saveConfig(config);
+    saveConfig(deviceDir, config);
   });
 
-  ipcMain.handle('get-vm-version', () => {
-    const config = loadConfig();
-    return config.vmversion || 'banana';
+  ipcMain.handle('get-vm-version', (event) => {
+    const { deviceDir } = getDeviceContext(event);
+    return loadConfig(deviceDir).vmversion || 'banana';
   });
 
   ipcMain.handle('get-auto-start', () => {
@@ -142,13 +159,12 @@ function registerIpcHandlers() {
     }).openAtLogin;
   });
 
-  ipcMain.handle('set-auto-start', (event, enabled) => {
+  ipcMain.handle('set-auto-start', (_, enabled) => {
     app.setLoginItemSettings({
       openAtLogin: enabled,
       path: app.getPath('exe'),
       args: ['--hidden'],
     });
-    console.log('[AutoStart] set:', app.getPath('exe'), enabled);
     return true;
   });
 
@@ -160,34 +176,79 @@ function registerIpcHandlers() {
     return [...new Set(cleanDevices)];
   });
 
-  ipcMain.handle('get-backend-status', () => !!getBackendProcess());
-
-  ipcMain.handle('list-presets', () => {
-    const config = loadConfig();
-    return Object.keys(config.presets || {});
+  ipcMain.handle('get-backend-status', (event) => {
+    const { deviceId } = getDeviceContext(event);
+    return !!getBackendProcess(deviceId);
   });
 
-  ipcMain.handle('save-preset', (_, name, mappings) => {
+  // --- Presets ---
+
+  ipcMain.handle('list-presets', (event) => {
+    const { deviceDir } = getDeviceContext(event);
+    return Object.keys(loadConfig(deviceDir).presets || {});
+  });
+
+  ipcMain.handle('save-preset', (event, name, mappings) => {
     if (!name || typeof name !== 'string') return;
-    const config = loadConfig();
+    const { deviceDir } = getDeviceContext(event);
+    const config = loadConfig(deviceDir);
     if (!config.presets || typeof config.presets !== 'object') config.presets = {};
     config.presets[name] = JSON.parse(JSON.stringify(mappings));
-    saveConfig(config);
+    saveConfig(deviceDir, config);
   });
 
-  ipcMain.handle('load-preset', (_, name) => {
-    const config = loadConfig();
-    const preset = config.presets?.[name];
+  ipcMain.handle('load-preset', (event, name) => {
+    const { deviceDir } = getDeviceContext(event);
+    const preset = loadConfig(deviceDir).presets?.[name];
     if (!preset) return null;
     return JSON.parse(JSON.stringify(preset));
   });
 
-  ipcMain.handle('delete-preset', (_, name) => {
-    const config = loadConfig();
+  ipcMain.handle('delete-preset', (event, name) => {
+    const { deviceDir } = getDeviceContext(event);
+    const config = loadConfig(deviceDir);
     if (config.presets?.[name] !== undefined) {
       delete config.presets[name];
-      saveConfig(config);
+      saveConfig(deviceDir, config);
     }
+  });
+
+  // --- Device management ---
+
+  ipcMain.handle('get-device-info', (event) => {
+    const { deviceId } = getDeviceContext(event);
+    return deviceManager.getDeviceById(deviceId);
+  });
+
+  ipcMain.handle('rename-device', (event, name) => {
+    const { deviceId, win } = getDeviceContext(event);
+    deviceManager.renameDevice(deviceId, name);
+    win.setTitle(`VolumeMaster — ${name}`);
+    const { updateTrayMenu } = require('./tray');
+    updateTrayMenu();
+    return true;
+  });
+
+  ipcMain.handle('remove-device', async (event) => {
+    const { deviceId, win } = getDeviceContext(event);
+    if (deviceManager.getAllDevices().length <= 1) return false;
+    await killBackend(deviceId);
+    deviceManager.removeDevice(deviceId);
+    const { updateTrayMenu } = require('./tray');
+    updateTrayMenu();
+    win.destroy();
+    return true;
+  });
+
+  ipcMain.handle('create-device', (_, name) => {
+    const { createWindow } = require('./window');
+    const { updateTrayMenu } = require('./tray');
+    const device = deviceManager.createDevice(name);
+    const deviceDir = deviceManager.getDeviceDir(device.id);
+    createWindow(device.id);
+    startBackend(device.id, deviceDir);
+    updateTrayMenu();
+    return device;
   });
 }
 

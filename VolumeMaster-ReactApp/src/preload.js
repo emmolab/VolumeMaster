@@ -28,6 +28,11 @@ contextBridge.exposeInMainWorld('api', {
   savePreset: (name, mappings) => ipcRenderer.invoke('save-preset', name, mappings),
   loadPreset: (name) => ipcRenderer.invoke('load-preset', name),
   deletePreset: (name) => ipcRenderer.invoke('delete-preset', name),
+
+  getDeviceInfo: () => ipcRenderer.invoke('get-device-info'),
+  renameDevice: (name) => ipcRenderer.invoke('rename-device', name),
+  createDevice: (name) => ipcRenderer.invoke('create-device', name),
+  removeDevice: () => ipcRenderer.invoke('remove-device'),
 });
 
 

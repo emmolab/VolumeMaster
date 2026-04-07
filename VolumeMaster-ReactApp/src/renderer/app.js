@@ -11,6 +11,7 @@ import {
 } from './sources.js';
 import { renderAllKnobsAndApps } from './mappings.js';
 import { setupPresets } from './presets.js';
+import { setupDeviceHeader, setupNewDeviceButton, setupRemoveDeviceButton } from './device.js';
 
 function setupGlobalFileDropGuards() {
   document.addEventListener('dragover', (e) => {
@@ -52,6 +53,7 @@ async function bootstrapFromConfig() {
   await renderAllKnobsAndApps();
   await applyVoiceMeeterUiFromMain();
   await applyInitialBackendStatus();
+  await setupDeviceHeader();
 }
 
 function init() {
@@ -66,6 +68,8 @@ function init() {
   setupGlobalFileDropGuards();
   setupMappingDragGlobalDragOver();
   setupPresets();
+  setupNewDeviceButton();
+  setupRemoveDeviceButton();
   bootstrapFromConfig();
 }
 

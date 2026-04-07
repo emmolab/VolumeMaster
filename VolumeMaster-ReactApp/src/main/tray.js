@@ -1,21 +1,25 @@
 const path = require('path');
 const { Tray, Menu, app } = require('electron');
+const deviceManager = require('./device-manager');
 
 const iconPathNormal = path.join(__dirname, '..', 'assets', 'icons', 'icongreen.ico');
 const iconPathCrashed = path.join(__dirname, '..', 'assets', 'icons', 'iconred.ico');
 
 let tray = null;
 
-function createTray(mainWindow) {
-  tray = new Tray(iconPathNormal);
-
-  const contextMenu = Menu.buildFromTemplate([
-    {
-      label: 'Show App',
-      click: () => {
-        mainWindow.show();
-      },
+function buildContextMenu() {
+  const devices = deviceManager.getAllDevices();
+  const deviceItems = devices.map((device) => ({
+    label: device.name,
+    click: () => {
+      const win = deviceManager.getWindowForDevice(device.id);
+      if (win) { win.show(); win.focus(); }
     },
+  }));
+
+  return Menu.buildFromTemplate([
+    ...deviceItems,
+    { type: 'separator' },
     {
       label: 'Quit',
       click: () => {
@@ -24,19 +28,25 @@ function createTray(mainWindow) {
       },
     },
   ]);
+}
 
+function createTray() {
+  tray = new Tray(iconPathNormal);
   tray.setToolTip('VolumeMaster');
-  tray.setContextMenu(contextMenu);
+  tray.setContextMenu(buildContextMenu());
 
   tray.on('click', () => {
-    mainWindow.isVisible() ? mainWindow.hide() : mainWindow.show();
+    for (const device of deviceManager.getAllDevices()) {
+      const win = deviceManager.getWindowForDevice(device.id);
+      if (win) { win.show(); win.focus(); }
+    }
   });
 
   return tray;
 }
 
-function getTray() {
-  return tray;
+function updateTrayMenu() {
+  if (tray) tray.setContextMenu(buildContextMenu());
 }
 
 function setTrayImageNormal() {
@@ -49,7 +59,8 @@ function setTrayImageCrashed() {
 
 module.exports = {
   createTray,
-  getTray,
+  updateTrayMenu,
+  getTray: () => tray,
   setTrayImageNormal,
   setTrayImageCrashed,
   iconPathNormal,

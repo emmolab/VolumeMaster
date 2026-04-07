@@ -1,104 +1,128 @@
 const path = require('path');
-const util = require('util');
-const { spawn, exec } = require('child_process');
-const { app, BrowserWindow } = require('electron');
+const { spawn } = require('child_process');
+const treeKill = require('tree-kill');
 
 const { setTrayImageNormal, setTrayImageCrashed } = require('./tray');
+const deviceManager = require('./device-manager');
 
 const headlessExePath = path.join(process.resourcesPath, 'VolumeMaster-Headless.exe');
 
-let backendProcess = null;
-let retryTimeout = null;
+// Map<deviceId, { process, retryTimeout }>
+const backends = new Map();
 
-function sendStatusToRenderer(type, message) {
-  const window = BrowserWindow.getAllWindows()[0];
-  if (window) {
-    window.webContents.send('backend-status', { type, message });
-  }
+function sendStatusToDevice(deviceId, type, message) {
+  const win = deviceManager.getWindowForDevice(deviceId);
+  if (win) win.webContents.send('backend-status', { type, message });
 }
 
-function scheduleRetry() {
-  setTrayImageCrashed();
+function updateTrayImage() {
+  const anyRunning = [...backends.values()].some((b) => b.process != null);
+  if (anyRunning) setTrayImageNormal();
+  else setTrayImageCrashed();
+}
 
-  if (retryTimeout) return;
-  console.log('Retrying backend in 5 seconds...');
-  retryTimeout = setTimeout(() => {
-    retryTimeout = null;
-    startBackendWithRetry();
+function scheduleRetry(deviceId, deviceDir) {
+  const backend = backends.get(deviceId);
+  if (backend?.retryTimeout) return;
+
+  console.log(`[${deviceId}] Retrying backend in 5 seconds...`);
+  const timeout = setTimeout(() => {
+    const b = backends.get(deviceId);
+    if (b) b.retryTimeout = null;
+    startBackend(deviceId, deviceDir);
   }, 5000);
+
+  if (backend) {
+    backend.retryTimeout = timeout;
+  } else {
+    backends.set(deviceId, { process: null, retryTimeout: timeout });
+  }
+
+  updateTrayImage();
 }
 
-function startBackendWithRetry() {
-  if (backendProcess) {
-    console.log('Backend already running');
+function startBackend(deviceId, deviceDir) {
+  if (backends.get(deviceId)?.process) {
+    console.log(`[${deviceId}] Backend already running`);
     return;
   }
 
-  console.log('Attempting to start backend...');
-  backendProcess = spawn(headlessExePath, [], {
+  console.log(`[${deviceId}] Starting backend...`);
+  const proc = spawn(headlessExePath, [], {
     detached: false,
     stdio: 'pipe',
     shell: false,
-    cwd: app.getPath('userData'),
+    cwd: deviceDir,
   });
 
-  if (backendProcess) {
-    setTrayImageNormal();
-    console.log('Backend running...');
-    sendStatusToRenderer('success', 'Backend started successfully.');
-  }
+  const existing = backends.get(deviceId);
+  backends.set(deviceId, { process: proc, retryTimeout: existing?.retryTimeout || null });
+  updateTrayImage();
+  sendStatusToDevice(deviceId, 'success', 'Backend started successfully.');
 
-  backendProcess.stdout.on('data', (data) => {
-    console.log(`[Backend stdout] ${data}`);
-    sendStatusToRenderer('info', `[Backend stdout] ${data}`);
+  proc.stdout.on('data', (data) => {
+    sendStatusToDevice(deviceId, 'info', `[Backend] ${data}`);
   });
 
-  backendProcess.stderr.on('data', (data) => {
-    console.error(`[Backend stderr] ${data}`);
-    sendStatusToRenderer('error', `[Backend stderr] ${data}`);
-    setTrayImageCrashed();
-    scheduleRetry();
+  proc.stderr.on('data', (data) => {
+    console.error(`[${deviceId}] stderr: ${data}`);
+    sendStatusToDevice(deviceId, 'error', `[Backend stderr] ${data}`);
+    const b = backends.get(deviceId);
+    if (b) b.process = null;
+    updateTrayImage();
+    scheduleRetry(deviceId, deviceDir);
   });
 
-  backendProcess.on('error', (err) => {
-    console.error('[Backend error]', err);
-    sendStatusToRenderer('error', `Backend error: ${err.message}`);
-    setTrayImageCrashed();
-    scheduleRetry();
+  proc.on('error', (err) => {
+    console.error(`[${deviceId}] error:`, err);
+    sendStatusToDevice(deviceId, 'error', `Backend error: ${err.message}`);
+    const b = backends.get(deviceId);
+    if (b) b.process = null;
+    updateTrayImage();
+    scheduleRetry(deviceId, deviceDir);
   });
 
-  backendProcess.on('close', (code) => {
-    console.log(`[Backend exited with code ${code}]`);
-    sendStatusToRenderer('warning', `Backend exited with code ${code}`);
-    backendProcess = null;
-    setTrayImageCrashed();
+  proc.on('close', (code) => {
+    console.log(`[${deviceId}] Backend exited with code ${code}`);
+    sendStatusToDevice(deviceId, 'warning', `Backend exited with code ${code}`);
+    const b = backends.get(deviceId);
+    if (b) b.process = null;
+    updateTrayImage();
   });
 }
 
-function killBackendByName(name = 'VolumeMaster-Headless.exe') {
+function killBackend(deviceId) {
   return new Promise((resolve) => {
-    exec(`taskkill /IM ${name} /F`, (err, stdout, stderr) => {
-      if (err) {
-        if (
-          stderr.includes('not found') ||
-          stderr.includes('No instance') ||
-          stderr.includes('not running')
-        ) {
-          console.log(`No running ${name} processes found.`);
-        } else {
-          console.error(`Failed to kill ${name}:`, err);
-        }
-      } else {
-        console.log(`${name} killed:`, stdout.trim());
-      }
-      resolve();
-    });
+    const backend = backends.get(deviceId);
+    if (backend?.retryTimeout) {
+      clearTimeout(backend.retryTimeout);
+    }
+    const proc = backend?.process;
+    backends.delete(deviceId);
+    updateTrayImage();
+    if (!proc?.pid) { resolve(); return; }
+    treeKill(proc.pid, () => resolve());
   });
+}
+
+async function killAllBackends() {
+  const ids = [...backends.keys()];
+  await Promise.all(ids.map((id) => killBackend(id)));
+  // Synchronous fallback: force-kill any instances that slipped through
+  try {
+    require('child_process').execSync('taskkill /F /IM VolumeMaster-Headless.exe', { stdio: 'ignore' });
+  } catch {
+    // Throws if no processes found — that's fine
+  }
+}
+
+function getBackendProcess(deviceId) {
+  return backends.get(deviceId)?.process || null;
 }
 
 module.exports = {
-  startBackendWithRetry,
-  sendStatusToRenderer,
-  killBackendByName,
-  getBackendProcess: () => backendProcess,
+  startBackend,
+  killBackend,
+  killAllBackends,
+  getBackendProcess,
 };
