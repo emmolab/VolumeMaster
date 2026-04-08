@@ -44,7 +44,7 @@ def watch_config(config_path, on_change):
 
 def load_config():
     with open('config.yaml', 'r', encoding='UTF-8') as file:
-        return yaml.safe_load(file)
+        return yaml.safe_load(file) or {}
 
 def setup_serial(config, default_port):
     port = default_port if config['comport'] == 'COM' else config['comport']
