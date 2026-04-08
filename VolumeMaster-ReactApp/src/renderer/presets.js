@@ -40,20 +40,36 @@ export async function setupPresets() {
 
   if (!presetsBar || !selectEl || !newBtn || !saveBtn || !deleteBtn || !nameRow || !nameInput || !confirmBtn || !cancelBtn) return;
 
-  await refreshPresetDropdown(selectEl);
+  // Restore last used preset
+  const lastPreset = await window.api.getLastPreset();
+  await refreshPresetDropdown(selectEl, lastPreset);
+  if (lastPreset && selectEl.value === lastPreset) {
+    const mappings = await window.api.loadPreset(lastPreset);
+    if (mappings) {
+      state.config.Mappings = cloneConfig(mappings);
+      await saveConfigAndSync();
+      await renderAllKnobsAndApps();
+    }
+  }
+
+  async function loadAndApplyPreset(name) {
+    const mappings = await window.api.loadPreset(name);
+    if (!mappings) return;
+    state.config.Mappings = cloneConfig(mappings);
+    await saveConfigAndSync();
+    await renderAllKnobsAndApps();
+    await window.api.setLastPreset(name);
+    showAlert('success', `Preset "${name}" loaded`);
+  }
 
   // Load preset on selection change
   selectEl.addEventListener('change', async () => {
     const name = selectEl.value;
-    if (!name) return;
-
-    const mappings = await window.api.loadPreset(name);
-    if (!mappings) return;
-
-    state.config.Mappings = cloneConfig(mappings);
-    await saveConfigAndSync();
-    await renderAllKnobsAndApps();
-    showAlert('success', `Preset "${name}" loaded`);
+    if (!name) {
+      await window.api.setLastPreset(null);
+      return;
+    }
+    await loadAndApplyPreset(name);
   });
 
   // Show name input row for creating a new preset
@@ -70,6 +86,7 @@ export async function setupPresets() {
     }
     await window.api.savePreset(name, state.config.Mappings);
     await refreshPresetDropdown(selectEl, name);
+    await window.api.setLastPreset(name);
     hideNameRow(presetsBar, nameRow);
     showAlert('success', `Preset "${name}" created`);
   }
@@ -81,6 +98,13 @@ export async function setupPresets() {
   });
 
   cancelBtn.addEventListener('click', () => hideNameRow(presetsBar, nameRow));
+
+  // Auto-save current mappings into the active preset (called by mappings.js on changes)
+  window._autoSaveActivePreset = async () => {
+    const name = selectEl.value;
+    if (!name) return;
+    await window.api.savePreset(name, state.config.Mappings);
+  };
 
   // Overwrite selected preset
   saveBtn.addEventListener('click', async () => {

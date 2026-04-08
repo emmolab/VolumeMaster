@@ -29,6 +29,9 @@ contextBridge.exposeInMainWorld('api', {
   getVolumeNotifications: () => ipcRenderer.invoke('get-volume-notifications'),
   setVolumeNotifications: (enabled) => ipcRenderer.invoke('set-volume-notifications', enabled),
 
+  getLastPreset: () => ipcRenderer.invoke('get-last-preset'),
+  setLastPreset: (name) => ipcRenderer.invoke('set-last-preset', name),
+
   listPresets: () => ipcRenderer.invoke('list-presets'),
   savePreset: (name, mappings) => ipcRenderer.invoke('save-preset', name, mappings),
   loadPreset: (name) => ipcRenderer.invoke('load-preset', name),

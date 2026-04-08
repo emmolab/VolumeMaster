@@ -258,6 +258,7 @@ async function addMasterVolume(knobId) {
     }
 
     mapping.ProcessNames.push('master');
+    window._autoSaveActivePreset?.();
 
     const knobSection = document.getElementById(`knob-section-${knobId}`);
     if (!knobSection) {
@@ -458,6 +459,7 @@ async function handleDrop(event, knobId) {
     saveConfigAndSync().catch((err) => {
       console.error('[handleDrop] Failed to save config:', err);
     });
+    window._autoSaveActivePreset?.();
   }
 
   // --- Update DOM ------------------------------------------------------------
@@ -527,6 +529,7 @@ async function removeAppFromKnob(knobId, appName) {
 
   list.splice(idx, 1);
   await saveConfigAndSync();
+  window._autoSaveActivePreset?.();
 
   try {
     const knobSection = document.getElementById(`knob-section-${knobId}`);

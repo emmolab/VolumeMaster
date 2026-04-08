@@ -204,6 +204,18 @@ function registerIpcHandlers() {
     return !!getBackendProcess(deviceId);
   });
 
+  ipcMain.handle('get-last-preset', (event) => {
+    const { deviceDir } = getDeviceContext(event);
+    return loadConfig(deviceDir).lastPreset || null;
+  });
+
+  ipcMain.handle('set-last-preset', (event, name) => {
+    const { deviceDir } = getDeviceContext(event);
+    const config = loadConfig(deviceDir);
+    config.lastPreset = name || null;
+    saveConfig(deviceDir, config);
+  });
+
   // --- Presets ---
 
   ipcMain.handle('list-presets', (event) => {
