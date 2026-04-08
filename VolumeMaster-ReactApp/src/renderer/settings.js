@@ -42,7 +42,7 @@ export function setupSettingsListeners() {
     } else if (type === 'warning') {
       document.getElementById('saveAndRunBtn').textContent = 'Run';
     }
-    showAlert(type, message);
+    if (type !== 'info') showAlert(type, message);
   });
 }
 
