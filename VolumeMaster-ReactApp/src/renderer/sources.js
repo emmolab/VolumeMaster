@@ -1,5 +1,6 @@
 import { state } from './state.js';
 import { sanitizeAppName } from './utils.js';
+import { VM_CHANNELS } from './voicemeeter.js';
 
 export async function loadProcessList() {
   state.runningProcesses = await window.api.listProcesses();
@@ -65,6 +66,64 @@ export function renderProcessSearch() {
         list.appendChild(item);
       });
   }
+}
+
+export function renderVoiceMeeterChannels() {
+  const notEnabledMsg = document.getElementById('vmNotEnabledMsg');
+  const columns = document.getElementById('vmChannelColumns');
+  const inputList = document.getElementById('vmInputList');
+  const outputList = document.getElementById('vmOutputList');
+  if (!inputList || !outputList) return;
+
+  const vmEnabled = state.config.vm === true || state.config.vm === 'true';
+  if (!vmEnabled) {
+    notEnabledMsg?.classList.remove('hidden');
+    columns?.classList.add('hidden');
+    return;
+  }
+  notEnabledMsg?.classList.add('hidden');
+  columns?.classList.remove('hidden');
+
+  const version = state.config.vmversion || 'banana';
+  const channels = VM_CHANNELS[version] ?? VM_CHANNELS.banana;
+
+  function buildItem(id, label) {
+    const dragName = `vm:${id}`;
+    const item = document.createElement('div');
+    item.className =
+      'flex items-center gap-2 px-2 py-1.5 bg-slate-700 border border-slate-600 rounded cursor-move hover:bg-purple-700 hover:border-purple-500 transition group';
+    item.setAttribute('draggable', 'true');
+
+    const dot = document.createElement('div');
+    dot.className = 'w-2 h-2 rounded-full bg-purple-400 group-hover:bg-white shrink-0 transition';
+
+    const lbl = document.createElement('span');
+    lbl.className = 'text-xs text-indigo-200 group-hover:text-white truncate transition';
+    lbl.textContent = label;
+
+    item.append(dot, lbl);
+
+    item.addEventListener('dragstart', (e) => {
+      state.mappingDragActive = true;
+      state.mappingDragPayload = { name: dragName };
+      e.dataTransfer.clearData();
+      e.dataTransfer.setData('text/plain', dragName);
+      e.dataTransfer.effectAllowed = 'copy';
+      item.style.opacity = '0.5';
+    });
+    item.addEventListener('dragend', () => {
+      state.mappingDragActive = false;
+      item.style.opacity = '1';
+    });
+
+    return item;
+  }
+
+  while (inputList.firstChild) inputList.removeChild(inputList.firstChild);
+  while (outputList.firstChild) outputList.removeChild(outputList.firstChild);
+
+  channels.inputs.forEach(({ id, label }) => inputList.appendChild(buildItem(id, label)));
+  channels.outputs.forEach(({ id, label }) => outputList.appendChild(buildItem(id, label)));
 }
 
 export function renderInputDeviceList() {

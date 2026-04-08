@@ -105,6 +105,12 @@
         >
           Input Devices
         </button>
+        <button
+          id="subTabVoiceMeeter"
+          class="hidden pb-1.5 text-xs font-semibold text-slate-500 hover:text-indigo-400 transition"
+        >
+          VoiceMeeter
+        </button>
       </div>
 
       <!-- Applications Panel -->
@@ -140,6 +146,27 @@
           id="inputDeviceList"
           class="custom-scroll flex flex-col gap-2 overflow-y-auto h-full"
         ></div>
+      </div>
+
+      <!-- VoiceMeeter Panel -->
+      <div
+        id="subContentVoiceMeeter"
+        class="hidden flex flex-col shrink-0"
+        style="height: 7rem"
+      >
+        <div id="vmNotEnabledMsg" class="hidden text-xs text-slate-500 italic">
+          VoiceMeeter is not enabled. Enable it in Settings.
+        </div>
+        <div id="vmChannelColumns" class="flex gap-3 h-full overflow-hidden">
+          <div class="flex flex-col min-w-0 flex-1 overflow-hidden">
+            <div class="text-xs text-slate-500 font-semibold uppercase mb-1">Inputs</div>
+            <div id="vmInputList" class="custom-scroll flex flex-col gap-1 overflow-y-auto"></div>
+          </div>
+          <div class="flex flex-col min-w-0 flex-1 overflow-hidden">
+            <div class="text-xs text-slate-500 font-semibold uppercase mb-1">Outputs</div>
+            <div id="vmOutputList" class="custom-scroll flex flex-col gap-1 overflow-y-auto"></div>
+          </div>
+        </div>
       </div>
 
       <!-- Presets Bar -->

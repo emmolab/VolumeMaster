@@ -31,11 +31,13 @@ export function setupSubTabs() {
   const panels = {
     subTabApps: document.getElementById('subContentApps'),
     subTabDevices: document.getElementById('subContentDevices'),
+    subTabVoiceMeeter: document.getElementById('subContentVoiceMeeter'),
   };
 
   const buttons = {
     subTabApps: document.getElementById('subTabApps'),
     subTabDevices: document.getElementById('subTabDevices'),
+    subTabVoiceMeeter: document.getElementById('subTabVoiceMeeter'),
   };
 
   Object.entries(buttons).forEach(([id, btn]) => {

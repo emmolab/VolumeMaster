@@ -26,6 +26,7 @@ export function setupSettingsListeners() {
       button.classList.add('bg-red-500', 'hover:bg-red-600');
       await window.api.disableVM();
     }
+    document.getElementById('subTabVoiceMeeter')?.classList.toggle('hidden', !newState);
   });
 
   document.getElementById('vmVersionSelect')?.addEventListener('change', async (e) => {
@@ -64,6 +65,7 @@ export async function applyVoiceMeeterUiFromMain() {
   if (vmBtn) {
     vmBtn.textContent = vmEnabled ? 'Enabled' : 'Disabled';
   }
+  document.getElementById('subTabVoiceMeeter')?.classList.toggle('hidden', !vmEnabled);
 
   const version = await window.api.getVMVersion();
   const vmVersionSelect = document.getElementById('vmVersionSelect');
