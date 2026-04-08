@@ -90,6 +90,12 @@ function removeDevice(id) {
   if (idx !== -1) {
     registry.splice(idx, 1);
     saveRegistry();
+    const deviceDir = path.join(devicesDir(), id);
+    try {
+      fs.rmSync(deviceDir, { recursive: true, force: true });
+    } catch (err) {
+      console.error(`[device-manager] Failed to delete device dir for ${id}:`, err);
+    }
   }
 }
 
