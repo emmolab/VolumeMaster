@@ -10,11 +10,12 @@ const sessions = new Map(); // Map<deviceId, Map<index, session>>
 
 let notifWin = null;
 let dismissTimer = null;
+let hideTimer = null; // separate from dismissTimer so it can be cancelled on re-show
 
 function getSession(deviceId, index) {
   if (!sessions.has(deviceId)) sessions.set(deviceId, new Map());
   const deviceMap = sessions.get(deviceId);
-  if (!deviceMap.has(index)) deviceMap.set(index, { anchor: undefined, active: false, activityTimer: null });
+  if (!deviceMap.has(index)) deviceMap.set(index, { anchor: undefined, active: false, activityTimer: null, lastShown: undefined });
   return deviceMap.get(index);
 }
 
@@ -37,6 +38,7 @@ function getOrCreateWindow(cb) {
     frame: false,
     transparent: true,
     alwaysOnTop: true,
+    type: 'toolbar',
     skipTaskbar: true,
     resizable: false,
     focusable: false,
@@ -48,6 +50,8 @@ function getOrCreateWindow(cb) {
     },
   });
 
+  notifWin.setAlwaysOnTop(true, 'screen-saver');
+  notifWin.setVisibleOnAllWorkspaces(true);
   notifWin.loadFile(path.join(__dirname, '..', 'notification.html'));
   notifWin.on('closed', () => { notifWin = null; });
   notifWin.webContents.once('did-finish-load', () => cb(notifWin));
@@ -98,18 +102,28 @@ function handleVolumeChange(deviceId, deviceDir, index, value) {
     session.anchor = value;
   }, 800);
 
+  // While active, only update the popup and extend its lifetime when the value
+  // has actually moved — ignores noise fluctuations of ±1
+  if (session.lastShown !== undefined && Math.abs(value - session.lastShown) < 1) return;
+  session.lastShown = value;
+
   const label = getLabel(config, index);
 
   getOrCreateWindow((win) => {
+    // Cancel any pending hide so a re-show isn't immediately undone
+    if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
+
     win.webContents.send('show-notification', { index, value, label });
     win.showInactive();
 
-    // Keep the popup alive while the knob is moving; dismiss after it stops
+    // Extend dismiss window while knob is actively moving
     if (dismissTimer) clearTimeout(dismissTimer);
     dismissTimer = setTimeout(() => {
+      dismissTimer = null;
       if (notifWin && !notifWin.isDestroyed()) {
         notifWin.webContents.send('hide-notification');
-        setTimeout(() => {
+        hideTimer = setTimeout(() => {
+          hideTimer = null;
           if (notifWin && !notifWin.isDestroyed()) notifWin.hide();
         }, 220);
       }
