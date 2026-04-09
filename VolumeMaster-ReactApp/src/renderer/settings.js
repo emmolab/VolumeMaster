@@ -38,10 +38,16 @@ export function setupSettingsListeners() {
   });
 
   window.api.onBackendStatus(({ type, message }) => {
+    const vmBanner = document.getElementById('vmErrorBanner');
     if (type === 'success') {
       document.getElementById('saveAndRunBtn').textContent = 'Stop';
+      vmBanner?.classList.add('hidden');
     } else if (type === 'warning') {
       document.getElementById('saveAndRunBtn').textContent = 'Run';
+      vmBanner?.classList.add('hidden');
+    } else if (type === 'vm-error') {
+      vmBanner?.classList.remove('hidden');
+      return; // don't show a toast for this
     }
     if (type !== 'info') showAlert(type, message);
   });

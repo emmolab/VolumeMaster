@@ -66,7 +66,9 @@ function startBackend(deviceId, deviceDir) {
     for (const line of lines) {
       const trimmed = line.trim();
       if (!trimmed) continue;
-      if (trimmed.startsWith('VOLUME:')) {
+      if (trimmed.startsWith('ERROR:VM_NOT_RUNNING:')) {
+        sendStatusToDevice(deviceId, 'vm-error', trimmed.slice('ERROR:VM_NOT_RUNNING:'.length));
+      } else if (trimmed.startsWith('VOLUME:')) {
         const parts = trimmed.split(':');
         if (parts.length === 3) {
           const index = parseInt(parts[1], 10);

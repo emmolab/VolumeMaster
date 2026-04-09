@@ -66,8 +66,12 @@ buttons = {}
 def setup_voicemeeter(config):
     global vmr, veme
     import voicemeeter
-    vmr = voicemeeter.remote(config['vmversion'])
-    vmr.login()
+    try:
+        vmr = voicemeeter.remote(config['vmversion'])
+        vmr.login()
+    except Exception as e:
+        print(f'ERROR:VM_NOT_RUNNING:{e}', flush=True)
+        return None, None, None
     veme = 1
 
     def scalar_to_gain(value):
@@ -134,7 +138,9 @@ volumes = {k: 0 for k in mappings}
 # Setup Voicemeeter if enabled
 set_input_gain = set_output_gain = set_button_toggle = None
 if config.get('vm'):
-    set_input_gain, set_output_gain, set_button_toggle = setup_voicemeeter(config)
+    result = setup_voicemeeter(config)
+    if result != (None, None, None):
+        set_input_gain, set_output_gain, set_button_toggle = result
 
 atexit.register(lambda: vmr.logout() if veme else None)
 
@@ -241,7 +247,7 @@ def process_audio_change(index, value):
             else:
                 print(f"Mic not found in cache: '{mic_name}' — will retry on next refresh")
 
-    if config.get('vm') and 'vm' in mapping:
+    if set_input_gain and set_output_gain and 'vm' in mapping:
         for target in mapping['vm']:
             if target.lower().startswith('input'):
                 set_input_gain(target.strip('Input'), value)
@@ -286,7 +292,7 @@ def main():
                     print("Malformed input:", line)
                     continue
 
-            elif veme:
+            elif set_button_toggle:
                 if line.endswith('!='):
                     set_button_toggle(line.strip('!='), False)
                 else:
