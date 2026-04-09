@@ -90,7 +90,7 @@ function handleVolumeChange(deviceId, deviceDir, index, value) {
   }
 
   // Not yet active: only trigger if knob moved meaningfully from its rest position
-  if (!session.active && Math.abs(value - session.anchor) <= 2) return;
+  if (!session.active && Math.abs(value - session.anchor) <= 3) return;
 
   // Crossed the threshold (or already active) — enter/stay in active mode
   session.active = true;
