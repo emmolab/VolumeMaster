@@ -45,12 +45,10 @@
   "dependencies": {
     "@tailwindcss/cli": "^4.2.2",
     "@tailwindcss/postcss": "^4.2.2",
-    "extract-file-icon": "^0.3.2",
     "icojs": "^0.20.1",
     "naudiodon": "^2.3.6",
     "ps-list": "^8.1.1",
     "serialport": "^13.0.0",
-    "sharp": "^0.34.5",
     "tree-kill": "^1.2.2",
     "x64": "^1.0.0",
     "yaml": "^2.8.3"

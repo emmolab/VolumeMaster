@@ -2,10 +2,11 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const util = require('util');
-const sharp = require('sharp');
-const extractIcon = require('extract-file-icon');
 
 const exec = util.promisify(require('child_process').exec);
+
+// In-memory cache: exe name → resolved full path, survives across calls
+const exePathCache = new Map();
 
 function cacheDir() {
   return path.join(require('electron').app.getPath('userData'), 'iconCache');
@@ -17,97 +18,83 @@ function ensureCacheDir() {
   return dir;
 }
 
-const exePathCache = new Map();
-
-function cacheFilenameForProgram(programName) {
-  const hash = crypto.createHash('sha256').update(programName.trim().toLowerCase()).digest('hex');
+function cachePathForKey(key) {
+  const hash = crypto.createHash('sha256').update(key.trim().toLowerCase()).digest('hex');
   return path.join(ensureCacheDir(), `${hash}.png`);
 }
 
-function normalizePath(p) {
+function loadIconFromCache(key) {
+  const filePath = cachePathForKey(key);
   try {
-    return path.normalize(p).toLowerCase();
-  } catch {
-    return p.trim().toLowerCase();
-  }
-}
-
-async function findRunningProcessExePath(exeName) {
-  try {
-    const baseName = path.basename(exeName, '.exe');
-    const cmd = `powershell -NoProfile -Command "Get-Process -Name '${baseName}' | Select-Object -ExpandProperty Path"`;
-
-    const { stdout } = await exec(cmd, { encoding: 'utf8' });
-    const output = stdout.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
-
-    if (output[0]) {
-      exePathCache.set(exeName, output[0]);
-      return output[0];
-    }
-    return null;
-  } catch (err) {
-    console.error('findRunningProcessExePath failed:', err.message);
-    return null;
-  }
-}
-
-async function saveIconToCache(programName, buffer) {
-  const filename = cacheFilenameForProgram(programName);
-  try {
-    await sharp(buffer).png().toFile(filename);
-    return filename;
-  } catch (err) {
-    console.error('Failed to save icon to cache:', err);
-    return null;
-  }
-}
-
-function loadIconFromCache(programName) {
-  const filename = cacheFilenameForProgram(programName);
-  if (!fs.existsSync(filename)) return null;
-
-  try {
-    const data = fs.readFileSync(filename);
+    const data = fs.readFileSync(filePath);
     return `data:image/png;base64,${data.toString('base64')}`;
   } catch {
     return null;
   }
 }
 
-async function getAppIcon(exeName) {
-  if (!exeName || typeof exeName !== 'string') return null;
-  const programName = exeName.toLowerCase();
+function saveIconToCache(key, nativeImage) {
+  const filePath = cachePathForKey(key);
+  try {
+    fs.writeFileSync(filePath, nativeImage.toPNG());
+  } catch (err) {
+    console.error('Failed to save icon to cache:', err);
+  }
+}
 
-  const cached = loadIconFromCache(programName);
-  if (cached) return cached;
-
-  let resolvedExePath = await findRunningProcessExePath(exeName);
-  if (!resolvedExePath) {
-    console.log('No running process found for', exeName);
-    return null;
+async function findRunningProcessExePath(exeName) {
+  // Check in-memory cache first to avoid repeated PowerShell spawns
+  if (exePathCache.has(exeName)) {
+    return exePathCache.get(exeName);
   }
 
-  resolvedExePath = normalizePath(resolvedExePath).replace(/\//g, '\\');
-  if (!fs.existsSync(resolvedExePath)) return null;
+  try {
+    const baseName = path.basename(exeName, '.exe');
+    const cmd = `powershell -NoProfile -NonInteractive -Command "Get-Process -Name '${baseName}' -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Path -First 1"`;
+    const { stdout } = await exec(cmd, { encoding: 'utf8', timeout: 5000 });
+    const resolved = stdout.trim();
+    if (resolved && fs.existsSync(resolved)) {
+      exePathCache.set(exeName, resolved);
+      return resolved;
+    }
+  } catch {
+    // Process not found or PowerShell timed out
+  }
+
+  return null;
+}
+
+async function getAppIcon(exeNameOrPath) {
+  if (!exeNameOrPath || typeof exeNameOrPath !== 'string') return null;
+
+  const cacheKey = exeNameOrPath.trim().toLowerCase();
+
+  // Return disk-cached icon if available
+  const cached = loadIconFromCache(cacheKey);
+  if (cached) return cached;
+
+  // Resolve to an absolute path — direct path skips PowerShell entirely
+  let resolvedPath;
+  if (path.isAbsolute(exeNameOrPath) && fs.existsSync(exeNameOrPath)) {
+    resolvedPath = exeNameOrPath;
+  } else {
+    resolvedPath = await findRunningProcessExePath(exeNameOrPath);
+  }
+
+  if (!resolvedPath) return null;
 
   try {
-    const buffer = extractIcon(resolvedExePath);
-    if (!buffer?.length) return null;
+    // app.getFileIcon is Electron-native: no extra native addons needed
+    const { app } = require('electron');
+    const nativeImage = await app.getFileIcon(resolvedPath, { size: 'large' });
+    if (nativeImage.isEmpty()) return null;
 
-    const cachedFile = await saveIconToCache(programName, buffer);
-    if (cachedFile && fs.existsSync(cachedFile)) {
-      const data = fs.readFileSync(cachedFile);
-      return `data:image/png;base64,${data.toString('base64')}`;
-    }
-
-    return `data:image/png;base64,${buffer.toString('base64')}`;
+    saveIconToCache(cacheKey, nativeImage);
+    return `data:image/png;base64,${nativeImage.toPNG().toString('base64')}`;
   } catch (err) {
     console.error('Icon extraction failed:', err);
     return null;
   }
 }
 
-module.exports = {
-  getAppIcon,
-  findRunningProcessExePath,
-};
+module.exports = { getAppIcon, findRunningProcessExePath };
